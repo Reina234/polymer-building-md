@@ -139,4 +139,3 @@ class RDKitHelper:
             rw.RemoveAtom(idx)
 
         Chem.rdmolops.SanitizeMol(rw)
-        return rw.GetMol()

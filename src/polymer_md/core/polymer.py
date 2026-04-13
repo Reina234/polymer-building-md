@@ -1,18 +1,22 @@
-from dataclasses import dataclass
-from typing import Counter, List
+from dataclasses import dataclass, field
+from typing import Counter
 
 from rdkit import Chem
 
-from polymer_md.core.residue_instance import ResidueInstance
+from polymer_md.core.residue_instance import RESIDUE_TAG, ResidueInstance
 
 
 @dataclass(frozen=True)
 class Polymer:
-    mol: Chem.rdchem.Mol
-    residue_instances: List[ResidueInstance]
+    mol: Chem.rdchem.Mol = field(compare=False, hash=False)
+    residue_instances: list[ResidueInstance]
 
-    def get_residue_by_atom(self, atom_idx: int) -> ResidueInstance:
-        return next(r for r in self.residue_instances if atom_idx in r.atom_indices)
+    def atom_indices(self, instance: ResidueInstance) -> frozenset[int]:
+        return instance.atom_indices(self.mol)
+
+    def get_residue_by_atom_idx(self, atom_idx: int) -> ResidueInstance:
+        tag = self.mol.GetAtomWithIdx(atom_idx).GetIntProp(RESIDUE_TAG)
+        return next(r for r in self.residue_instances if tag in r.residue_tags)
 
     def composition(self) -> Counter[str]:
         return Counter(r.residue_id for r in self.residue_instances)

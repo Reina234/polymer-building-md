@@ -5,8 +5,9 @@ from typing import Literal
 class MapLabels(IntEnum):
     HEAD = 1
     TAIL = 2
-    CAP = 3
-    INACTIVE_END = 4
+    INACTIVE_END = 3
+    CAP_GROWING = 4
+    CAP_INACTIVE = 5
 
     def other(self) -> "MapLabels":
         if self == MapLabels.HEAD:
