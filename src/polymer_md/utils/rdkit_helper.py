@@ -92,3 +92,51 @@ class RDKitHelper:
             anchor2=MolAtom(mol=anchor2.mol, idx=anchor2.idx - offset),
             indices_to_remove=[site1.idx, adj_star_idx2],
         )
+
+    @staticmethod
+    def get_single_neighbour(mol_atom: MolAtom) -> MolAtom:
+        neighbours = mol_atom.neighbours
+        if len(neighbours) != 1:
+            raise ValueError(
+                f"Atom at index {mol_atom.idx} expected exactly 1 neighbour, "
+                f"found {len(neighbours)}."
+            )
+        return neighbours[0]
+
+    @staticmethod
+    def relabel_wildcard(mol: Chem.Mol, new_map_num: int) -> Chem.Mol:
+        star = next(a for a in mol.GetAtoms() if a.GetAtomicNum() == 0)
+        rw = Chem.rdchem.RWMol(mol)
+        rw.GetAtomWithIdx(star.GetIdx()).SetAtomMapNum(new_map_num)
+        return rw.GetMol()
+
+    @staticmethod
+    def join_many_at_map_nums(
+        mol: Chem.Mol,
+        pairs: list[tuple[int, int]],
+        mols_to_combine: list[Chem.Mol],
+    ) -> Chem.Mol:
+        combined = mol
+        for m in mols_to_combine:
+            combined = Chem.rdmolops.CombineMols(combined, m)
+
+        rw = Chem.rdchem.RWMol(combined)
+        stars_to_remove = []
+
+        for map1, map2 in pairs:
+            star1_idx = RDKitHelper.get_site_idx(rw.GetMol(), atom_num=0, map_num=map1)
+            star2_idx = RDKitHelper.get_site_idx(rw.GetMol(), atom_num=0, map_num=map2)
+            anchor1 = RDKitHelper.get_single_neighbour(
+                MolAtom(rw.GetMol(), star1_idx)
+            ).idx
+            anchor2 = RDKitHelper.get_single_neighbour(
+                MolAtom(rw.GetMol(), star2_idx)
+            ).idx
+            rw.AddBond(anchor1, anchor2, Chem.rdchem.BondType.SINGLE)
+            stars_to_remove.extend([star1_idx, star2_idx])
+
+        for idx in sorted(set(stars_to_remove), reverse=True):
+            rw.RemoveAtom(idx)
+
+        Chem.rdmolops.SanitizeMol(rw)
+        return rw.GetMol()

@@ -5,9 +5,10 @@ from dataclasses import dataclass
 class Cap:
     smiles: str
     label: str
+    id: str
 
 
 class BuiltinCap:
-    HYDROGEN = Cap(smiles="*[H]", label="H")
-    METHYL = Cap(smiles="*C", label="Me")
-    HYDROXYL = Cap(smiles="*O", label="OH")
+    HYDROGEN = Cap(smiles="*[H]", label="H", id="H")
+    METHYL = Cap(smiles="*C", label="Me", id="Me")
+    HYDROXYL = Cap(smiles="*O", label="OH", id="OH")
