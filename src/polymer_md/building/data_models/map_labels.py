@@ -6,6 +6,7 @@ class MapLabels(IntEnum):
     HEAD = 1
     TAIL = 2
     CAP = 3
+    INACTIVE_END = 4
 
     def other(self) -> "MapLabels":
         if self == MapLabels.HEAD:
