@@ -3,7 +3,7 @@ from typing import Counter, List
 
 from rdkit import Chem
 
-from residue_instance import ResidueInstance
+from polymer_md.core.residue_instance import ResidueInstance
 
 
 @dataclass(frozen=True)

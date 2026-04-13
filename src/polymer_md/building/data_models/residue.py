@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 
 from rdkit import Chem
 
-from polymer_md.building.sites import MapLabels
+from polymer_md.building.data_models.map_labels import MapLabels
+from polymer_md.core.mol_atom import MolAtom
 from polymer_md.utils.rdkit_helper import RDKitHelper
 
 
@@ -18,11 +19,11 @@ class AdditionPolymerResidue:
         mol = self._parse_and_validate(self.residue_smiles)
         object.__setattr__(self, "_mol", mol)
 
-    def get_polymerisation_site_idx(self, site: MapLabels) -> int:
+    def get_polymerisation_atom(self, site: MapLabels) -> MolAtom:
         if site == MapLabels.HEAD:
-            return self.head_idx
+            return self.head
         if site == MapLabels.TAIL:
-            return self.tail_idx
+            return self.tail
         raise ValueError(f"Unknown polymerisation site type {site}")
 
     @property
@@ -34,12 +35,22 @@ class AdditionPolymerResidue:
         return self.label if self.label is not None else self.residue_smiles
 
     @property
-    def head_idx(self) -> int:
-        return RDKitHelper.get_site_idx(mol=self._mol, atom_num=0, map_num=1)
+    def head(self) -> MolAtom:
+        return MolAtom(
+            mol=self._mol,
+            idx=RDKitHelper.get_site_idx(
+                mol=self._mol, atom_num=0, map_num=MapLabels.HEAD
+            ),
+        )
 
     @property
-    def tail_idx(self) -> int:
-        return RDKitHelper.get_site_idx(mol=self._mol, atom_num=0, map_num=2)
+    def tail(self) -> MolAtom:
+        return MolAtom(
+            mol=self._mol,
+            idx=RDKitHelper.get_site_idx(
+                mol=self._mol, atom_num=0, map_num=MapLabels.TAIL
+            ),
+        )
 
     def _parse_and_validate(self, smiles: str) -> Chem.Mol:
         mol = RDKitHelper.mol_from_smiles(smiles=smiles)

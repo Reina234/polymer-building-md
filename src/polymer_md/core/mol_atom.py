@@ -11,3 +11,7 @@ class MolAtom:
     @property
     def atom(self) -> Chem.rdchem.Atom:
         return self.mol.GetAtomWithIdx(self.idx)
+
+    @property
+    def neighbours(self) -> list["MolAtom"]:
+        return [MolAtom(mol=self.mol, idx=n.GetIdx()) for n in self.atom.GetNeighbors()]

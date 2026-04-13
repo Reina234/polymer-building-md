@@ -3,6 +3,8 @@ from __future__ import annotations
 from rdkit import Chem
 from rdkit.Chem.rdchem import RWMol
 
+from polymer_md.core import MolAtom
+
 
 class RDKitHelper:
     @staticmethod
@@ -37,16 +39,6 @@ class RDKitHelper:
         return rw.GetMol()
 
     @staticmethod
-    def get_single_neighbour_idx(mol: Chem.Mol, atom_idx: int) -> int:
-        neighbours = mol.GetAtomWithIdx(atom_idx).GetNeighbors()
-        if len(neighbours) != 1:
-            raise ValueError(
-                f"Atom at index {atom_idx} expected exactly 1 neighbour, "
-                f"found {len(neighbours)}."
-            )
-        return neighbours[0].GetIdx()
-
-    @staticmethod
     def remove_atom_and_adjust(rw: RWMol, atom_idx: int) -> None:
         rw.RemoveAtom(atom_idx)
 
@@ -56,22 +48,20 @@ class RDKitHelper:
 
     @staticmethod
     def combine_mols_at_indices(
-        mol1: Chem.Mol,
-        anchor_idx1: int,
-        mol2: Chem.Mol,
-        anchor_idx2: int,
+        anchor1: MolAtom,
+        anchor2: MolAtom,
         indices_to_remove: list[int],
         bond_type: Chem.rdchem.BondType = Chem.rdchem.BondType.SINGLE,
     ) -> Chem.Mol:
-        combined = Chem.rdmolops.CombineMols(mol1, mol2)
+        combined = Chem.rdmolops.CombineMols(anchor1.mol, anchor2.mol)
         rw = RWMol(combined)
 
-        if rw.GetBondBetweenAtoms(anchor_idx1, anchor_idx2) is not None:
+        if rw.GetBondBetweenAtoms(anchor1.idx, anchor2.idx) is not None:
             raise ValueError(
-                f"Bond already exists between atoms {anchor_idx1} and {anchor_idx2}."
+                f"Bond already exists between atoms {anchor1.idx} and {anchor2.idx}."
             )
 
-        rw.AddBond(anchor_idx1, anchor_idx2, bond_type)
+        rw.AddBond(anchor1.idx, anchor2.idx, bond_type)
 
         for idx in sorted(indices_to_remove, reverse=True):
             rw.RemoveAtom(idx)
@@ -81,27 +71,24 @@ class RDKitHelper:
 
     @staticmethod
     def single_bond_join_at_wildcard_sites(
-        mol1: Chem.Mol,
-        star_idx1: int,
-        mol2: Chem.Mol,
-        star_idx2: int,
+        site1: MolAtom,
+        site2: MolAtom,
     ) -> Chem.Mol:
-        offset = mol1.GetNumAtoms()
-        adj_star_idx2 = star_idx2 + offset
+        offset = site1.mol.GetNumAtoms()
+        adj_star_idx2 = site2.idx + offset
 
-        combined = Chem.rdmolops.CombineMols(mol1, mol2)
+        combined = Chem.rdmolops.CombineMols(site1.mol, site2.mol)
+        combined_site1 = MolAtom(mol=combined, idx=site1.idx)
+        combined_site2 = MolAtom(mol=combined, idx=adj_star_idx2)
 
-        anchor_idx1 = RDKitHelper.get_single_neighbour_idx(
-            mol=combined, atom_idx=star_idx1
+        assert (
+            len(combined_site1.neighbours) == 1 and len(combined_site2.neighbours) == 1
         )
-        anchor_idx2 = RDKitHelper.get_single_neighbour_idx(
-            mol=combined, atom_idx=adj_star_idx2
-        )
+        anchor1 = combined_site1.neighbours[0]
+        anchor2 = combined_site2.neighbours[0]
 
         return RDKitHelper.combine_mols_at_indices(
-            mol1=mol1,
-            anchor_idx1=anchor_idx1,
-            mol2=mol2,
-            anchor_idx2=anchor_idx2 - offset,
-            indices_to_remove=[star_idx1, adj_star_idx2],
+            anchor1=anchor1,
+            anchor2=MolAtom(mol=anchor2.mol, idx=anchor2.idx - offset),
+            indices_to_remove=[site1.idx, adj_star_idx2],
         )

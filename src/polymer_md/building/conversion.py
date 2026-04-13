@@ -5,10 +5,9 @@ from typing import List
 from rdkit import Chem
 from rdkit.Chem.rdchem import RWMol
 
-from polymer_md.building.monomer import Monomer
-from polymer_md.building.residue import AdditionPolymerResidue
-from polymer_md.building.sites import MapLabels
-from polymer_md.utils.rdkit_helper import RDKitHelper
+from polymer_md.building.data_models import AdditionPolymerResidue, MapLabels
+from polymer_md.core import Monomer
+from polymer_md.utils import RDKitHelper
 
 
 class MonomerToResidueConverter:

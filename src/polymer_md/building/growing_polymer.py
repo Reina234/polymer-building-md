@@ -7,15 +7,19 @@ from typing import Counter, List, Optional
 
 from rdkit import Chem
 
-from polymer_md.building.residue import AdditionPolymerResidue
-from polymer_md.building.sites import MapLabels, PolymerisationLabels
-from polymer_md.utils.rdkit_helper import RDKitHelper
-from residue_instance import ResidueInstance
+from polymer_md.building.data_models import (
+    AdditionPolymerResidue,
+    MapLabels,
+    PolymerisationLabels,
+)
+from polymer_md.core import ResidueInstance
+from polymer_md.core.mol_atom import MolAtom
+from polymer_md.utils import RDKitHelper
 
 
 @dataclass(frozen=True)
 class GrowingEnd:
-    idx: int
+    end_atom: MolAtom
     residue_id: str
 
 
@@ -55,13 +59,13 @@ class AdditionPolymer:
         initial_site = initial_site or self._get_random_site()
         RDKitHelper.replace_with_placeholder(
             mol=residue,
-            index_to_replace=initial_residue.get_polymerisation_site_idx(
+            index_to_replace=initial_residue.get_polymerisation_atom(
                 site=initial_site.other()
-            ),
+            ).idx,
             placeholder_map_num=MapLabels.CAP,
         )
         self._growing_end = GrowingEnd(
-            idx=initial_residue.get_polymerisation_site_idx(site=initial_site),
+            end_atom=initial_residue.get_polymerisation_atom(site=initial_site),
             residue_id=initial_residue.id,
         )
         self._register_residue(
