@@ -145,12 +145,17 @@ class AdditionPolymer:
         tagged_mol: Chem.Mol,
         site: PolymerisationLabels,
     ) -> Chem.Mol:
+        tagged_mol = RDKitHelper.replace_map_num(
+            mol=tagged_mol,
+            old_map=site,
+            new_map=MapLabels.INCOMING,
+        )
         incoming_site = MolAtom(
             mol=tagged_mol,
             idx=RDKitHelper.get_site_idx(
                 mol=tagged_mol,
                 atom_num=0,
-                map_num=site,
+                map_num=MapLabels.INCOMING,
             ),
         )
         return RDKitHelper.single_bond_join_at_wildcard_sites(

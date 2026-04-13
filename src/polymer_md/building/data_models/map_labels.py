@@ -8,6 +8,7 @@ class MapLabels(IntEnum):
     INACTIVE_END = 3
     CAP_GROWING = 4
     CAP_INACTIVE = 5
+    INCOMING = 6
 
     def other(self) -> "MapLabels":
         if self == MapLabels.HEAD:

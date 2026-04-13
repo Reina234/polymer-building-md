@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from typing import Optional
+
+import matplotlib.pyplot as plt
 from rdkit import Chem
+from rdkit.Chem import Draw
 from rdkit.Chem.rdchem import RWMol
 
 from polymer_md.core import MolAtom
@@ -12,6 +16,14 @@ class RDKitHelper:
         ranks = Chem.rdmolfiles.CanonicalRankAtoms(mol)
         new_order = sorted(range(mol.GetNumAtoms()), key=lambda i: ranks[i])
         return Chem.rdmolops.RenumberAtoms(mol, new_order)
+
+    @staticmethod
+    def replace_map_num(mol: Chem.Mol, old_map: int, new_map: int) -> Chem.Mol:
+        rw = RWMol(mol)
+        for a in rw.GetAtoms():
+            if a.GetAtomicNum() == 0 and a.GetAtomMapNum() == old_map:
+                a.SetAtomMapNum(new_map)
+        return rw.GetMol()
 
     @staticmethod
     def get_site_idx(mol: Chem.Mol, atom_num: int, map_num: int) -> int:
@@ -70,27 +82,11 @@ class RDKitHelper:
         return rw.GetMol()
 
     @staticmethod
-    def single_bond_join_at_wildcard_sites(
-        site1: MolAtom,
-        site2: MolAtom,
-    ) -> Chem.Mol:
-        offset = site1.mol.GetNumAtoms()
-        adj_star_idx2 = site2.idx + offset
-
-        combined = Chem.rdmolops.CombineMols(site1.mol, site2.mol)
-        combined_site1 = MolAtom(mol=combined, idx=site1.idx)
-        combined_site2 = MolAtom(mol=combined, idx=adj_star_idx2)
-
-        assert (
-            len(combined_site1.neighbours) == 1 and len(combined_site2.neighbours) == 1
-        )
-        anchor1 = combined_site1.neighbours[0]
-        anchor2 = combined_site2.neighbours[0]
-
-        return RDKitHelper.combine_mols_at_indices(
-            anchor1=anchor1,
-            anchor2=MolAtom(mol=anchor2.mol, idx=anchor2.idx - offset),
-            indices_to_remove=[site1.idx, adj_star_idx2],
+    def single_bond_join_at_wildcard_sites(site1: MolAtom, site2: MolAtom) -> Chem.Mol:
+        return RDKitHelper.join_many_at_map_nums(
+            mol=site1.mol,
+            mols_to_combine=[site2.mol],
+            pairs=[(site1.atom.GetAtomMapNum(), site2.atom.GetAtomMapNum())],
         )
 
     @staticmethod
@@ -113,29 +109,41 @@ class RDKitHelper:
     @staticmethod
     def join_many_at_map_nums(
         mol: Chem.Mol,
-        pairs: list[tuple[int, int]],
         mols_to_combine: list[Chem.Mol],
+        pairs: list[tuple[int, int]],
     ) -> Chem.Mol:
         combined = mol
         for m in mols_to_combine:
             combined = Chem.rdmolops.CombineMols(combined, m)
 
-        rw = Chem.rdchem.RWMol(combined)
+        rw = RWMol(combined)
         stars_to_remove = []
 
         for map1, map2 in pairs:
-            star1_idx = RDKitHelper.get_site_idx(rw.GetMol(), atom_num=0, map_num=map1)
-            star2_idx = RDKitHelper.get_site_idx(rw.GetMol(), atom_num=0, map_num=map2)
-            anchor1 = RDKitHelper.get_single_neighbour(
-                MolAtom(rw.GetMol(), star1_idx)
-            ).idx
-            anchor2 = RDKitHelper.get_single_neighbour(
-                MolAtom(rw.GetMol(), star2_idx)
-            ).idx
-            rw.AddBond(anchor1, anchor2, Chem.rdchem.BondType.SINGLE)
-            stars_to_remove.extend([star1_idx, star2_idx])
+            s1 = RDKitHelper.get_site_idx(rw.GetMol(), atom_num=0, map_num=map1)
+            s2 = RDKitHelper.get_site_idx(rw.GetMol(), atom_num=0, map_num=map2)
+            a1 = RDKitHelper.get_single_neighbour(MolAtom(rw.GetMol(), s1)).idx
+            a2 = RDKitHelper.get_single_neighbour(MolAtom(rw.GetMol(), s2)).idx
+            rw.AddBond(a1, a2, Chem.rdchem.BondType.SINGLE)
+            stars_to_remove.extend([s1, s2])
 
         for idx in sorted(set(stars_to_remove), reverse=True):
             rw.RemoveAtom(idx)
 
         Chem.rdmolops.SanitizeMol(rw)
+        return rw.GetMol()
+
+    @staticmethod
+    def visualize_mol(
+        mol: Chem.Mol, size=(300, 300), title: Optional[str] = None
+    ) -> None:
+
+        img = Draw.MolToImage(mol, size=size)
+        plt.figure(figsize=(size[0] / 100, size[1] / 100))
+        plt.imshow(img)
+        if title is not None:
+            plt.title(title)
+
+        plt.axis("off")
+
+        plt.show()

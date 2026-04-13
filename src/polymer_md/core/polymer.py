@@ -15,7 +15,10 @@ class Polymer:
         return instance.atom_indices(self.mol)
 
     def get_residue_by_atom_idx(self, atom_idx: int) -> ResidueInstance:
-        tag = self.mol.GetAtomWithIdx(atom_idx).GetIntProp(RESIDUE_TAG)
+        atom = self.mol.GetAtomWithIdx(atom_idx)
+        if not atom.HasProp(RESIDUE_TAG):
+            raise ValueError(f"Atom {atom_idx} has no residue tag.")
+        tag = atom.GetIntProp(RESIDUE_TAG)
         return next(r for r in self.residue_instances if tag in r.residue_tags)
 
     def composition(self) -> Counter[str]:
