@@ -7,7 +7,7 @@ from rdkit.Chem.rdchem import RWMol
 
 from polymer_md.building.monomer import Monomer
 from polymer_md.building.residue import AdditionPolymerResidue
-from polymer_md.building.sites import PolymerisationSite
+from polymer_md.building.sites import MapLabels
 from polymer_md.utils.rdkit_helper import RDKitHelper
 
 
@@ -45,15 +45,21 @@ class MonomerToResidueConverter:
         bonds = []
         for bond in mol.GetBonds():
             assert isinstance(bond, Chem.rdchem.Bond)
-            if bond.GetBondTypeAsDouble() != 2.0:
-                continue
-            if bond.GetIsAromatic():
+            if not cls._could_be_polymerisable(bond=bond):
                 continue
             a1 = mol.GetAtomWithIdx(bond.GetBeginAtomIdx())
             a2 = mol.GetAtomWithIdx(bond.GetEndAtomIdx())
             if a1.GetSymbol() == "C" and a2.GetSymbol() == "C":
                 bonds.append(bond)
         return bonds
+
+    @classmethod
+    def _could_be_polymerisable(cls, bond: Chem.rdchem.Bond) -> bool:
+        if bond.GetBondTypeAsDouble() != 2.0:
+            return False
+        if bond.GetIsAromatic():
+            return False
+        return True
 
     @classmethod
     def _open_double_bond(
@@ -65,8 +71,8 @@ class MonomerToResidueConverter:
 
         rw.GetBondBetweenAtoms(idx1, idx2).SetBondType(Chem.rdchem.BondType.SINGLE)
 
-        star1 = rw.AddAtom(cls._make_wildcard(PolymerisationSite.HEAD))
-        star2 = rw.AddAtom(cls._make_wildcard(PolymerisationSite.TAIL))
+        star1 = rw.AddAtom(cls._make_wildcard(MapLabels.HEAD))
+        star2 = rw.AddAtom(cls._make_wildcard(MapLabels.TAIL))
         rw.AddBond(idx1, star1, Chem.rdchem.BondType.SINGLE)
         rw.AddBond(idx2, star2, Chem.rdchem.BondType.SINGLE)
 
@@ -74,7 +80,7 @@ class MonomerToResidueConverter:
         return rw.GetMol()
 
     @classmethod
-    def _make_wildcard(cls, site: PolymerisationSite) -> Chem.rdchem.Atom:
+    def _make_wildcard(cls, site: MapLabels) -> Chem.rdchem.Atom:
         atom = Chem.rdchem.Atom(0)
         atom.SetAtomMapNum(site)
         return atom

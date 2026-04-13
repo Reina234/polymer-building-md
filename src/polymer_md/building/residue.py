@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from rdkit import Chem
 
-from polymer_md.building.sites import PolymerisationSite
+from polymer_md.building.sites import MapLabels
 from polymer_md.utils.rdkit_helper import RDKitHelper
 
 
@@ -17,6 +17,13 @@ class AdditionPolymerResidue:
     def __post_init__(self) -> None:
         mol = self._parse_and_validate(self.residue_smiles)
         object.__setattr__(self, "_mol", mol)
+
+    def get_polymerisation_site_idx(self, site: MapLabels) -> int:
+        if site == MapLabels.HEAD:
+            return self.head_idx
+        if site == MapLabels.TAIL:
+            return self.tail_idx
+        raise ValueError(f"Unknown polymerisation site type {site}")
 
     @property
     def mol(self) -> Chem.Mol:
@@ -40,11 +47,11 @@ class AdditionPolymerResidue:
         stars = [a for a in mol.GetAtoms() if a.GetAtomicNum() == 0]
         map_nums = {a.GetAtomMapNum() for a in stars}
 
-        if len(stars) != len(PolymerisationSite):
+        if len(stars) != 2:
             raise ValueError(
                 f"Residue must contain exactly 2 wildcard (*) atoms, found {len(stars)}."
             )
-        if map_nums != set(PolymerisationSite):
+        if map_nums != {MapLabels.HEAD, MapLabels.TAIL}:
             raise ValueError(
                 f"Wildcard atoms must be labelled [*:1] and [*:2], found map nums {map_nums}."
             )
