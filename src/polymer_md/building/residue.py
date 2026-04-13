@@ -27,11 +27,11 @@ class AdditionPolymerResidue:
         return self.label if self.label is not None else self.residue_smiles
 
     @property
-    def site_1_idx(self) -> int:
+    def head_idx(self) -> int:
         return RDKitHelper.get_site_idx(mol=self._mol, atom_num=0, map_num=1)
 
     @property
-    def site_2_idx(self) -> int:
+    def tail_idx(self) -> int:
         return RDKitHelper.get_site_idx(mol=self._mol, atom_num=0, map_num=2)
 
     def _parse_and_validate(self, smiles: str) -> Chem.Mol:

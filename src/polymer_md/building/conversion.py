@@ -12,12 +12,12 @@ from polymer_md.utils.rdkit_helper import RDKitHelper
 
 
 class MonomerToResidueConverter:
-
-    def convert(self, monomer: Monomer) -> AdditionPolymerResidue:
+    @classmethod
+    def convert(cls, monomer: Monomer) -> AdditionPolymerResidue:
         mol = RDKitHelper.mol_from_smiles(smiles=monomer.smiles)
-        bonds = self._find_polymerisable_cc_bonds(mol=mol)
-        self._validate_bond_is_polymerisable(bonds=bonds, monomer=monomer)
-        residue_mol = self._open_double_bond(mol=mol, bond=bonds[0])
+        bonds = cls._find_polymerisable_cc_bonds(mol=mol)
+        cls._validate_bond_is_polymerisable(bonds=bonds, monomer=monomer)
+        residue_mol = cls._open_double_bond(mol=mol, bond=bonds[0])
         canonical_mol = RDKitHelper.canonicalise(mol=residue_mol)
         residue_smiles = Chem.rdmolfiles.MolToSmiles(mol=canonical_mol)
 
@@ -26,8 +26,9 @@ class MonomerToResidueConverter:
             label=monomer.label,
         )
 
+    @classmethod
     def _validate_bond_is_polymerisable(
-        self, bonds: List[Chem.Bond], monomer: Monomer
+        cls, bonds: List[Chem.Bond], monomer: Monomer
     ) -> None:
         if len(bonds) == 0:
             raise ValueError(
@@ -39,7 +40,8 @@ class MonomerToResidueConverter:
                 "Exactly one required for addition polymerisation."
             )
 
-    def _find_polymerisable_cc_bonds(self, mol: Chem.Mol) -> list[Chem.rdchem.Bond]:
+    @classmethod
+    def _find_polymerisable_cc_bonds(cls, mol: Chem.Mol) -> list[Chem.rdchem.Bond]:
         bonds = []
         for bond in mol.GetBonds():
             assert isinstance(bond, Chem.rdchem.Bond)
@@ -53,8 +55,9 @@ class MonomerToResidueConverter:
                 bonds.append(bond)
         return bonds
 
+    @classmethod
     def _open_double_bond(
-        self, mol: Chem.rdchem.Mol, bond: Chem.rdchem.Bond
+        cls, mol: Chem.rdchem.Mol, bond: Chem.rdchem.Bond
     ) -> Chem.Mol:
         rw = RWMol(mol)
         idx1 = bond.GetBeginAtomIdx()
@@ -62,15 +65,16 @@ class MonomerToResidueConverter:
 
         rw.GetBondBetweenAtoms(idx1, idx2).SetBondType(Chem.rdchem.BondType.SINGLE)
 
-        star1 = rw.AddAtom(self._make_wildcard(PolymerisationSite.HEAD))
-        star2 = rw.AddAtom(self._make_wildcard(PolymerisationSite.TAIL))
+        star1 = rw.AddAtom(cls._make_wildcard(PolymerisationSite.HEAD))
+        star2 = rw.AddAtom(cls._make_wildcard(PolymerisationSite.TAIL))
         rw.AddBond(idx1, star1, Chem.rdchem.BondType.SINGLE)
         rw.AddBond(idx2, star2, Chem.rdchem.BondType.SINGLE)
 
         Chem.rdmolops.SanitizeMol(rw)
         return rw.GetMol()
 
-    def _make_wildcard(self, site: PolymerisationSite) -> Chem.rdchem.Atom:
+    @classmethod
+    def _make_wildcard(cls, site: PolymerisationSite) -> Chem.rdchem.Atom:
         atom = Chem.rdchem.Atom(0)
         atom.SetAtomMapNum(site)
         return atom
