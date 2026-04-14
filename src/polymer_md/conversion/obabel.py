@@ -9,13 +9,13 @@ from polymer_md.core.monomer import Monomer
 from polymer_md.utils.file import FileHelper, PathType
 
 logger = logging.getLogger(__name__)
-ObabelInputs = Literal[FileFormats.PDB]
-ObabelOutputs = Literal[FileFormats.MOL2, FileFormats.GRO]
-OBABEL_INPUTS: set[str] = set(get_args(ObabelInputs))
-OBABEL_OUTPUTS: set[str] = set(get_args(ObabelOutputs))
+OBabelInputs = Literal[FileFormats.PDB]
+OBabelOutputs = Literal[FileFormats.MOL2, FileFormats.GRO]
+OBABEL_INPUTS: set[str] = set(get_args(OBabelInputs))
+OBABEL_OUTPUTS: set[str] = set(get_args(OBabelOutputs))
 
 
-class ObabelConverter:
+class OBabelConverter:
     default_dir = Path("obabel_outputs/")
 
     def __init__(self, item_to_convert: Union[PathType, Monomer]) -> None:
@@ -40,7 +40,7 @@ class ObabelConverter:
 
     def convert(
         self,
-        output_format: ObabelOutputs,
+        output_format: OBabelOutputs,
         output_dir: Optional[PathType] = None,
         output_name: Optional[str] = None,
         overwrite: bool = False,
