@@ -366,6 +366,12 @@ wheels = [
 ]
 
 [[package]]
+name = "parmed"
+version = "4.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a0/f5/65d3c930767aece106b97443eda3a37de8b9e6a183b7d999a670b50c161f/parmed-4.3.1.tar.gz", hash = "sha256:1f26bfcad2d9e1344fda343fe0199fd36ae9a02f64669010bf47e30f9ce0918c", size = 20197667, upload-time = "2026-02-04T21:08:21.086Z" }
+
+[[package]]
 name = "pillow"
 version = "12.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -439,6 +445,8 @@ source = { editable = "." }
 dependencies = [
     { name = "acpype" },
     { name = "matplotlib" },
+    { name = "openbabel-wheel" },
+    { name = "parmed" },
     { name = "pydantic" },
     { name = "pylint-pydantic" },
     { name = "rdkit" },
@@ -449,6 +457,8 @@ dependencies = [
 requires-dist = [
     { name = "acpype", specifier = ">=2023.10.27" },
     { name = "matplotlib", specifier = ">=3.10.8" },
+    { name = "openbabel-wheel", specifier = ">=3.1.1.23" },
+    { name = "parmed", specifier = ">=4.3.1" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pylint-pydantic", specifier = ">=0.4.1" },
     { name = "rdkit", specifier = ">=2026.3.1" },
