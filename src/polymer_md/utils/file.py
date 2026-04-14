@@ -50,3 +50,13 @@ class FileHelper:
         path = Path(path)
         suffix_with_period = path.suffix
         return suffix_with_period.split(".")[-1]
+
+    @staticmethod
+    def construct_path(
+        path_dir: PathType,
+        stem: str,
+        suffix: str,
+    ) -> Path:
+        path_dir = Path(path_dir)
+        path_dir.mkdir(exist_ok=True)
+        return path_dir / f"{stem}.{suffix}"
