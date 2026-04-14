@@ -33,10 +33,6 @@ class AdditionPolymer:
         self._instance_counts: Counter[str] = Counter()
         self._tag_counter: int = 0
 
-    # ------------------------------------------------------------------
-    # Properties
-    # ------------------------------------------------------------------
-
     @property
     def mol(self) -> Chem.rdchem.Mol:
         if self._mol is None:
