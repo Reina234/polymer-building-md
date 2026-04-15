@@ -22,12 +22,12 @@ def step(msg: str) -> None:
 if __name__ == "__main__":
     random.seed(42)
     styrene_monomer = Monomer(smiles="C=Cc1ccccc1", label="S")
-    mma_monomer = Monomer(smiles="COC(=O)C(C)=C", label="H")
+    polyeth_monomer = Monomer(smiles="CC=C", label="P")
 
     styrene = MonomerToResidueConverter.convert(monomer=styrene_monomer)
-    mma = MonomerToResidueConverter.convert(monomer=mma_monomer)
+    polyeth = MonomerToResidueConverter.convert(monomer=polyeth_monomer)
 
-    residue_list = [styrene, mma]
+    residue_list = [styrene, polyeth]
     polymer = AdditionPolymer()
     polymer.initialise(styrene, site=MapLabels.HEAD)
 

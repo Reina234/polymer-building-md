@@ -19,3 +19,8 @@ class MapLabels(IntEnum):
 
 
 PolymerisationLabels = Literal[MapLabels.HEAD, MapLabels.TAIL]
+
+SITE_INDEX_TO_POLYMERISATION_LABEL: dict[int, PolymerisationLabels] = {
+    0: MapLabels.HEAD,
+    1: MapLabels.TAIL,
+}

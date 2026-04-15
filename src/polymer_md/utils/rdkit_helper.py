@@ -134,6 +134,24 @@ class RDKitHelper:
         return rw.GetMol()
 
     @staticmethod
+    def strip_atom_map_numbers(mol: Chem.Mol) -> Chem.Mol:
+        rw = RWMol(Chem.Mol(mol))
+        for atom in rw.GetAtoms():
+            atom.SetAtomMapNum(0)
+        return rw.GetMol()
+
+    @staticmethod
+    def canonical_smiles_stripped(mol: Chem.Mol) -> str:
+        return Chem.rdmolfiles.MolToSmiles(RDKitHelper.strip_atom_map_numbers(mol))
+
+    @staticmethod
+    def wildcard_ranks_equal(mol: Chem.Mol) -> bool:
+        stripped = RDKitHelper.strip_atom_map_numbers(mol)
+        ranks = list(Chem.rdmolfiles.CanonicalRankAtoms(stripped, breakTies=False))
+        wildcards = [a for a in stripped.GetAtoms() if a.GetAtomicNum() == 0]
+        return ranks[wildcards[0].GetIdx()] == ranks[wildcards[1].GetIdx()]
+
+    @staticmethod
     def visualize_mol(
         mol: Chem.Mol, size=(300, 300), title: Optional[str] = None
     ) -> None:
