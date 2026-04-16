@@ -1,4 +1,5 @@
 from .composition import MonomerComposition
+from .monomer_spec import MonomerSpec
 from .constraints import FixedWeightConstraint, RatioConstraint, TransitionConstraint
 from .map_labels import (
     MapLabels,
@@ -14,6 +15,7 @@ __all__ = [
     "FixedWeightConstraint",
     "MapLabels",
     "MonomerComposition",
+    "MonomerSpec",
     "Orientation",
     "PolymerisationLabels",
     "RatioConstraint",

@@ -13,6 +13,14 @@ class SiteKey:
     def __str__(self) -> str:
         return f"{self.residue_id}:{self.site_index}"
 
+    @classmethod
+    def head(cls, residue_id: str) -> SiteKey:
+        return cls(residue_id, 0)
+
+    @classmethod
+    def tail(cls, residue_id: str) -> SiteKey:
+        return cls(residue_id, 1)
+
 
 @dataclass(frozen=True)
 class TransitionMatrix:
@@ -44,21 +52,21 @@ class TransitionMatrix:
         return np.where(row_sums > 0, self.weights / row_sums, 1.0 / self.n_sites)
 
     def get_probabilities(self, from_site: SiteKey) -> dict[SiteKey, float]:
-        T = self._normalised()
+        normalised = self._normalised()
         i = self.site_to_idx[from_site]
-        return {sk: float(T[i, j]) for j, sk in enumerate(self.site_keys)}
+        return {sk: float(normalised[i, j]) for j, sk in enumerate(self.site_keys)}
 
     def sample_next(self, from_site: SiteKey, rng: np.random.Generator) -> SiteKey:
-        probs = self.get_probabilities(from_site)
-        keys = list(probs.keys())
-        p = np.array([probs[k] for k in keys])
-        return keys[rng.choice(len(keys), p=p)]
+        probabilities = self.get_probabilities(from_site)
+        site_keys = list(probabilities.keys())
+        weights = np.array([probabilities[sk] for sk in site_keys])
+        return site_keys[rng.choice(len(site_keys), p=weights)]
 
     def stationary_distribution(self) -> dict[SiteKey, float]:
-        T = self._normalised()
-        eigenvalues, eigenvectors = np.linalg.eig(T.T)
-        idx = int(np.argmin(np.abs(eigenvalues - 1.0)))
-        pi = np.real(eigenvectors[:, idx])
-        pi = np.abs(pi)
-        pi /= pi.sum()
-        return {sk: float(pi[i]) for i, sk in enumerate(self.site_keys)}
+        normalised = self._normalised()
+        eigenvalues, eigenvectors = np.linalg.eig(normalised.T)
+        stationary_index = int(np.argmin(np.abs(eigenvalues - 1.0)))
+        stationary = np.real(eigenvectors[:, stationary_index])
+        stationary = np.abs(stationary)
+        stationary /= stationary.sum()
+        return {sk: float(stationary[i]) for i, sk in enumerate(self.site_keys)}

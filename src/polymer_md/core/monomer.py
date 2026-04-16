@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional
+
+from polymer_md.core.molecule_input import MoleculeInput
 
 
 @dataclass(frozen=True)
-class Monomer:
-    smiles: str
-    label: Optional[str]
+class Monomer(MoleculeInput):
+    pass
