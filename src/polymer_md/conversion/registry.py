@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from polymer_md.conversion.base import Converter, ConversionKey
+
+_C = TypeVar("_C", bound=Converter)
 from polymer_md.conversion.file_formats import FileFormats
 from polymer_md.core.molecule_input import MoleculeInput
 
@@ -48,6 +50,6 @@ class ConversionRegistry:
 REGISTRY = ConversionRegistry()
 
 
-def register_converter(cls: type[Converter]) -> type[Converter]:
+def register_converter(cls: type[_C]) -> type[_C]:
     REGISTRY.register(cls)
     return cls

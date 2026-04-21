@@ -5,7 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tqdm import tqdm
+from tqdm import tqdm  # type: ignore[import-untyped]
 
 import parmed as pmd
 
@@ -53,25 +53,29 @@ class TrimerParameterisationPipeline:
         residues = self._build_residue_map()
         matrix = self._solve_transition_matrix()
 
-        logger.info("Building trimers...")
+        logger.info(
+            "Building trimers for %d monomers: %s",
+            len(self.specs),
+            [spec.residue_id for spec in self.specs],
+        )
         all_trimers = TrimerBuilder(
             residues=residues, matrix=matrix, cap=self.cap
         ).build_all()
 
         selected = self._filter_by_probability(all_trimers)
+        dropped = len(all_trimers) - len(selected)
         logger.info(
-            "%d trimers built, %d selected (threshold=%.4f)",
+            "%d trimers built: %d selected, %d dropped (p < %.4f)",
             len(all_trimers),
             len(selected),
+            dropped,
             self.probability_threshold,
         )
 
         results = []
-        for index, trimer in enumerate(selected, start=1):
+        for trimer in tqdm(selected, desc="Parameterizing trimers", unit="trimer"):
             logger.info(
-                "Parameterising trimer %d/%d: %s-%s-%s (%s) p=%.4f",
-                index,
-                len(selected),
+                "Parameterizing %s-%s-%s (%s) p=%.4f",
                 trimer.left_id,
                 trimer.central_id,
                 trimer.right_id,
