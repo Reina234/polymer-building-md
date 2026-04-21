@@ -61,8 +61,12 @@ class TrimerParameterisationPipeline:
             residues=residues, matrix=matrix, cap=self.cap
         ).build_all()
 
-        for trimer in sorted(all_trimers, key=lambda t: t.probability, reverse=True):
-            logger.info("  p=%.4f  %s", trimer.probability, trimer.label)
+        sorted_trimers = sorted(all_trimers, key=lambda t: t.probability, reverse=True)
+        rows = "\n".join(
+            f"  {i:>3}.  p={t.probability:.4f}  {t.label}"
+            for i, t in enumerate(sorted_trimers, 1)
+        )
+        logger.info("Trimer probabilities (%d total):\n%s", len(all_trimers), rows)
 
         selected = self._filter_by_probability(all_trimers)
         dropped = len(all_trimers) - len(selected)
