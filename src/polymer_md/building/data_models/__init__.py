@@ -8,7 +8,7 @@ from .map_labels import (
 )
 from .residue import AdditionPolymerResidue
 from .transition_matrix import SiteKey, TransitionMatrix
-from .trimer import Orientation, TrimerResult
+from .trimer import Orientation, TrimerRegion, TrimerResult
 
 __all__ = [
     "AdditionPolymerResidue",
@@ -23,5 +23,6 @@ __all__ = [
     "SiteKey",
     "TransitionConstraint",
     "TransitionMatrix",
+    "TrimerRegion",
     "TrimerResult",
 ]

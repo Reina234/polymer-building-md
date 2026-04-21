@@ -12,9 +12,10 @@ from polymer_md.building.data_models.constraints import (
     TransitionConstraint,
 )
 from polymer_md.building.data_models.transition_matrix import SiteKey, TransitionMatrix
+from polymer_md.building.solvers.base import TransitionMatrixSolver
 
 
-class ScipySolver:
+class ScipySolver(TransitionMatrixSolver):
     def solve(
         self,
         compositions: list[MonomerComposition],

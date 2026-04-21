@@ -7,9 +7,10 @@ import numpy as np
 from polymer_md.building.data_models.composition import MonomerComposition
 from polymer_md.building.data_models.constraints import TransitionConstraint
 from polymer_md.building.data_models.transition_matrix import SiteKey, TransitionMatrix
+from polymer_md.building.solvers.base import TransitionMatrixSolver
 
 
-class ProportionalSolver:
+class ProportionalSolver(TransitionMatrixSolver):
     def solve(
         self,
         compositions: list[MonomerComposition],

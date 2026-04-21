@@ -11,7 +11,12 @@ from polymer_md.building.data_models.map_labels import (
 )
 from polymer_md.building.data_models.residue import AdditionPolymerResidue
 from polymer_md.building.data_models.transition_matrix import SiteKey, TransitionMatrix
-from polymer_md.building.data_models.trimer import Orientation, TrimerResult
+from polymer_md.building.data_models.trimer import (
+    Orientation,
+    TRIMER_REGION_TAG,
+    TrimerRegion,
+    TrimerResult,
+)
 from polymer_md.core.caps import Cap
 from polymer_md.utils.rdkit_helper import RDKitHelper
 
@@ -31,6 +36,23 @@ _MAP_LABEL_VALUES = {int(m) for m in MapLabels}
 assert not any(
     int(t) in _MAP_LABEL_VALUES for t in _TrimerMapNum
 ), "A _TrimerMapNum value clashes with a MapLabels value."
+
+
+def _tag_atoms_with_region(mol: Chem.Mol, region: TrimerRegion) -> Chem.Mol:
+    rw = Chem.rdchem.RWMol(mol)
+    for atom in rw.GetAtoms():
+        if atom.GetAtomicNum() != 0:
+            atom.SetIntProp(TRIMER_REGION_TAG, int(region))
+    return rw.GetMol()
+
+
+def _collect_region_indices(mol: Chem.Mol, region: TrimerRegion) -> frozenset[int]:
+    return frozenset(
+        atom.GetIdx()
+        for atom in mol.GetAtoms()
+        if atom.HasProp(TRIMER_REGION_TAG)
+        and atom.GetIntProp(TRIMER_REGION_TAG) == int(region)
+    )
 
 
 class _TrimerMolAssembler:
@@ -72,10 +94,11 @@ class _TrimerMolAssembler:
         )
 
     def _make_cap(self, map_num: _TrimerMapNum) -> Chem.Mol:
-        return RDKitHelper.relabel_wildcard(
+        mol = RDKitHelper.relabel_wildcard(
             Chem.rdmolfiles.MolFromSmiles(self._cap.smiles),
             new_map_num=int(map_num),
         )
+        return _tag_atoms_with_region(mol, TrimerRegion.CAP)
 
     @staticmethod
     def _prepare_left(residue: AdditionPolymerResidue, bonding_site: int) -> Chem.Mol:
@@ -83,9 +106,8 @@ class _TrimerMolAssembler:
         mol = RDKitHelper.replace_map_num(
             Chem.rdchem.Mol(residue.mol), bonding_map, _TrimerMapNum.LEFT_BOND_SRC
         )
-        return RDKitHelper.replace_map_num(
-            mol, bonding_map.other(), _TrimerMapNum.OPEN_LEFT
-        )
+        mol = RDKitHelper.replace_map_num(mol, bonding_map.other(), _TrimerMapNum.OPEN_LEFT)
+        return _tag_atoms_with_region(mol, TrimerRegion.LEFT)
 
     @staticmethod
     def _prepare_central(residue: AdditionPolymerResidue, k_site_left: int) -> Chem.Mol:
@@ -93,9 +115,8 @@ class _TrimerMolAssembler:
         mol = RDKitHelper.replace_map_num(
             Chem.rdchem.Mol(residue.mol), left_map, _TrimerMapNum.LEFT_BOND_DST
         )
-        return RDKitHelper.replace_map_num(
-            mol, left_map.other(), _TrimerMapNum.RIGHT_BOND_SRC
-        )
+        mol = RDKitHelper.replace_map_num(mol, left_map.other(), _TrimerMapNum.RIGHT_BOND_SRC)
+        return _tag_atoms_with_region(mol, TrimerRegion.CENTRAL)
 
     @staticmethod
     def _prepare_right(residue: AdditionPolymerResidue, bonding_site: int) -> Chem.Mol:
@@ -103,9 +124,8 @@ class _TrimerMolAssembler:
         mol = RDKitHelper.replace_map_num(
             Chem.rdchem.Mol(residue.mol), bonding_map, _TrimerMapNum.RIGHT_BOND_DST
         )
-        return RDKitHelper.replace_map_num(
-            mol, bonding_map.other(), _TrimerMapNum.OPEN_RIGHT
-        )
+        mol = RDKitHelper.replace_map_num(mol, bonding_map.other(), _TrimerMapNum.OPEN_RIGHT)
+        return _tag_atoms_with_region(mol, TrimerRegion.RIGHT)
 
 
 class TrimerBuilder:
@@ -184,6 +204,7 @@ class TrimerBuilder:
         if canonical in seen_smiles:
             return None
         seen_smiles.add(canonical)
+        capped = self._assembler.attach_caps(uncapped)
         return TrimerResult(
             left_id=left_id,
             central_id=central_id,
@@ -191,7 +212,7 @@ class TrimerBuilder:
             orientation=(
                 Orientation.HEAD_IN if k_site_left == 0 else Orientation.TAIL_IN
             ),
-            mol=self._assembler.attach_caps(uncapped),
+            mol=capped,
             probability=self._compute_probability(
                 left_id,
                 left_site,
@@ -201,6 +222,10 @@ class TrimerBuilder:
                 right_site,
                 stationary,
             ),
+            left_atom_indices=_collect_region_indices(capped, TrimerRegion.LEFT),
+            central_atom_indices=_collect_region_indices(capped, TrimerRegion.CENTRAL),
+            right_atom_indices=_collect_region_indices(capped, TrimerRegion.RIGHT),
+            cap_atom_indices=_collect_region_indices(capped, TrimerRegion.CAP),
         )
 
     def _compute_probability(

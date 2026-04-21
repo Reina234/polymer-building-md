@@ -10,6 +10,7 @@ class FileFormats(StrEnum):
     GRO = "gro"
     ITP = "itp"
     TOP = "top"
+    SDF = "sdf"
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,6 @@ from openbabel import pybel
 
 from polymer_md.conversion.base import Converter, handles
 from polymer_md.conversion.file_formats import FileFormats
-from polymer_md.core.molecule_input import MoleculeInput
 from polymer_md.conversion.registry import register_converter
 from polymer_md.utils.file import FileHelper
 
@@ -16,15 +15,15 @@ logger = logging.getLogger(__name__)
 
 @register_converter
 class OBabelConverter(Converter):
-    @handles(MoleculeInput, FileFormats.MOL2)
-    def _molecule_to_mol2(
+    @handles(FileFormats.SDF, FileFormats.MOL2)
+    def _sdf_to_mol2(
         self,
-        source: MoleculeInput,
+        source: Path,
         output_dir: Path,
         output_name: str,
         overwrite: bool,
     ) -> Path:
-        mol = pybel.readstring("smi", source.smiles)
+        mol = self._read_mol_from_path(source)
         return self._write_mol(mol, FileFormats.MOL2, output_dir, output_name, overwrite)
 
     @handles(FileFormats.PDB, FileFormats.MOL2)

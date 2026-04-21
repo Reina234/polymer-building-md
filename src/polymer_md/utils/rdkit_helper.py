@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -27,7 +28,6 @@ class RDKitHelper:
 
     @staticmethod
     def get_site_idx(mol: Chem.Mol, atom_num: int, map_num: int) -> int:
-
         return next(
             a.GetIdx()
             for a in mol.GetAtoms()
@@ -152,16 +152,23 @@ class RDKitHelper:
         return ranks[wildcards[0].GetIdx()] == ranks[wildcards[1].GetIdx()]
 
     @staticmethod
+    def write_sdf(mol: Chem.Mol, path: Path) -> None:
+        writer = Chem.rdmolfiles.SDWriter(str(path))
+        writer.write(mol)
+        writer.close()
+
+    @staticmethod
+    def mol_to_pdb(mol: Chem.Mol, path: Path) -> None:
+        Chem.rdmolfiles.MolToPDBFile(mol, str(path))
+
+    @staticmethod
     def visualize_mol(
         mol: Chem.Mol, size=(300, 300), title: Optional[str] = None
     ) -> None:
-
         img = Draw.MolToImage(mol, size=size)
         plt.figure(figsize=(size[0] / 100, size[1] / 100))
         plt.imshow(img)
         if title is not None:
             plt.title(title)
-
         plt.axis("off")
-
         plt.show()

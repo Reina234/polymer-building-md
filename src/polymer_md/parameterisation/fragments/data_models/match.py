@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Protocol
 
 from polymer_md.parameterisation.fragments.data_models.annotated_members import (
     AnnotatedAtom,
@@ -11,7 +11,8 @@ from polymer_md.parameterisation.fragments.data_models.fragment import Fragment
 from polymer_md.parameterisation.fragments.data_models.parameters import ForceFieldParameter
 
 
-class ResolutionStrategy(Protocol):
+class ResolutionStrategy(ABC):
+    @abstractmethod
     def resolve(self, values: list[float]) -> float: ...
 
 
