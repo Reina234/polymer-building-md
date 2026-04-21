@@ -143,6 +143,7 @@ class TrimerParameterisationPipeline:
             trimer_result=trimer,
             gromacs_files=gromacs_files,
             structure=structure,
+            mol_3d=mol_3d,
         )
 
     @staticmethod
