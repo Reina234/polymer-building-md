@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from enum import IntEnum
 
 import numpy as np
@@ -12,7 +13,7 @@ from polymer_md.building.data_models.map_labels import (
 from polymer_md.building.data_models.residue import AdditionPolymerResidue
 from polymer_md.building.data_models.transition_matrix import SiteKey, TransitionMatrix
 from polymer_md.building.data_models.trimer import (
-    Orientation,
+    BondType,
     TRIMER_REGION_TAG,
     TrimerRegion,
     TrimerResult,
@@ -141,57 +142,39 @@ class TrimerBuilder:
 
     def build_all(self) -> list[TrimerResult]:
         stationary = self._matrix.stationary_distribution()
-        seen_smiles: set[str] = set()
+        best: dict[str, TrimerResult] = {}
+        total_prob: dict[str, float] = {}
+
+        for central_id in self._residues:
+            for left_id in self._residues:
+                for right_id in self._residues:
+                    for left_site in range(2):
+                        for k_site_left in range(2):
+                            for right_site in range(2):
+                                key, result = self._build_candidate(
+                                    left_id, central_id, right_id,
+                                    left_site, k_site_left, right_site,
+                                    stationary,
+                                )
+                                total_prob[key] = total_prob.get(key, 0.0) + result.probability
+                                if key not in best or result.probability > best[key].probability:
+                                    best[key] = result
+
         return [
-            result
-            for central_id in self._residues
-            for result in self._enumerate_for_central(
-                central_id, stationary, seen_smiles
-            )
+            dataclasses.replace(r, probability=total_prob[key])
+            for key, r in best.items()
         ]
 
-    def _enumerate_for_central(
-        self,
-        central_id: str,
-        stationary: dict[SiteKey, float],
-        seen_smiles: set[str],
-    ) -> list[TrimerResult]:
-        central_is_regiosymmetric = RDKitHelper.wildcard_ranks_equal(
-            self._residues[central_id].mol
-        )
-        results = []
-        for left_id, right_id in self._left_right_pairs(central_is_regiosymmetric):
-            for config in self._bond_configs(central_is_regiosymmetric):
-                result = self._try_build(
-                    left_id, central_id, right_id, config, stationary, seen_smiles
-                )
-                if result is not None:
-                    results.append(result)
-        return results
-
-    def _left_right_pairs(
-        self, central_is_regiosymmetric: bool
-    ) -> list[tuple[str, str]]:
-        all_ids = list(self._residues.keys())
-        if not central_is_regiosymmetric:
-            return [(left, right) for left in all_ids for right in all_ids]
-        return [
-            (left, right)
-            for left in all_ids
-            for right in all_ids
-            if not self._is_palindrome_duplicate(left, right)
-        ]
-
-    def _try_build(
+    def _build_candidate(
         self,
         left_id: str,
         central_id: str,
         right_id: str,
-        config: tuple[int, int, int],
+        left_site: int,
+        k_site_left: int,
+        right_site: int,
         stationary: dict[SiteKey, float],
-        seen_smiles: set[str],
-    ) -> TrimerResult | None:
-        k_site_left, left_site, right_site = config
+    ) -> tuple[str, TrimerResult]:
         uncapped = self._assembler.build_uncapped(
             self._residues[left_id],
             left_site,
@@ -200,33 +183,25 @@ class TrimerBuilder:
             self._residues[right_id],
             right_site,
         )
-        canonical = RDKitHelper.canonical_smiles_stripped(uncapped)
-        if canonical in seen_smiles:
-            return None
-        seen_smiles.add(canonical)
+        key = RDKitHelper.canonical_smiles_stripped(uncapped)
         capped = self._assembler.attach_caps(uncapped)
-        return TrimerResult(
+        probability = self._compute_probability(
+            left_id, left_site, central_id, k_site_left, right_id, right_site, stationary
+        )
+        result = TrimerResult(
             left_id=left_id,
             central_id=central_id,
             right_id=right_id,
-            orientation=(
-                Orientation.HEAD_IN if k_site_left == 0 else Orientation.TAIL_IN
-            ),
+            left_bond=BondType(from_site=left_site, to_site=k_site_left),
+            right_bond=BondType(from_site=1 - k_site_left, to_site=right_site),
             mol=capped,
-            probability=self._compute_probability(
-                left_id,
-                left_site,
-                central_id,
-                k_site_left,
-                right_id,
-                right_site,
-                stationary,
-            ),
+            probability=probability,
             left_atom_indices=_collect_region_indices(capped, TrimerRegion.LEFT),
             central_atom_indices=_collect_region_indices(capped, TrimerRegion.CENTRAL),
             right_atom_indices=_collect_region_indices(capped, TrimerRegion.RIGHT),
             cap_atom_indices=_collect_region_indices(capped, TrimerRegion.CAP),
         )
+        return key, result
 
     def _compute_probability(
         self,
@@ -243,9 +218,7 @@ class TrimerBuilder:
         k_active = SiteKey(central_id, 1 - k_site_left)
         return (
             stationary.get(left_active, 0.0)
-            * self._transition(
-                normalised, left_active, SiteKey(central_id, k_site_left)
-            )
+            * self._transition(normalised, left_active, SiteKey(central_id, k_site_left))
             * self._transition(normalised, k_active, SiteKey(right_id, right_site))
         )
 
@@ -263,20 +236,3 @@ class TrimerBuilder:
         if from_index is None or to_index is None:
             return 0.0
         return float(normalised[from_index, to_index])
-
-    def _is_palindrome_duplicate(self, left_id: str, right_id: str) -> bool:
-        left_smiles = RDKitHelper.canonical_smiles_stripped(self._residues[left_id].mol)
-        right_smiles = RDKitHelper.canonical_smiles_stripped(
-            self._residues[right_id].mol
-        )
-        return left_smiles > right_smiles
-
-    @staticmethod
-    def _bond_configs(central_is_regiosymmetric: bool) -> list[tuple[int, int, int]]:
-        k_orientations = [0] if central_is_regiosymmetric else [0, 1]
-        return [
-            (k_site_left, left_site, right_site)
-            for k_site_left in k_orientations
-            for left_site in range(2)
-            for right_site in range(2)
-        ]

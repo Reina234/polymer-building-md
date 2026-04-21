@@ -3,7 +3,6 @@ from polymer_md.building.data_models import (
     FixedWeightConstraint,
     MonomerComposition,
     MonomerSpec,
-    Orientation,
     RatioConstraint,
     SiteKey,
     TransitionConstraint,
@@ -13,7 +12,11 @@ from polymer_md.building.data_models import (
 )
 from polymer_md.building.monomer_converter import MonomerToResidueConverter
 from polymer_md.building.random_polymer import RandomPolymerBuilder
-from polymer_md.building.solvers import ProportionalSolver, ScipySolver, TransitionMatrixSolver
+from polymer_md.building.solvers import (
+    ProportionalSolver,
+    ScipySolver,
+    TransitionMatrixSolver,
+)
 from polymer_md.building.trimer_builder import TrimerBuilder
 
 __all__ = [
@@ -22,7 +25,6 @@ __all__ = [
     "MonomerComposition",
     "MonomerSpec",
     "MonomerToResidueConverter",
-    "Orientation",
     "ProportionalSolver",
     "RandomPolymerBuilder",
     "RatioConstraint",

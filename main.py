@@ -35,6 +35,7 @@ def main() -> None:
     pipeline = TrimerParameterisationPipeline(
         specs=specs,
         cap=BuiltinCap.METHYL,
+        # solver=ScipySolver(),
         conformer_generator=ETKDGConformerGenerator(use_uff=False),
         charge_method="bcc",
     )
@@ -46,11 +47,7 @@ def main() -> None:
     print(f"\n=== Done: {len(parameterised_trimers)} parameterised trimers ===\n")
     for pt in parameterised_trimers:
         tr = pt.trimer_result
-        print(
-            f"  {tr.left_id}-{tr.central_id}-{tr.right_id}"
-            f"  orientation={tr.orientation.name}"
-            f"  p={tr.probability:.4f}"
-        )
+        print(f"  {tr.label}  p={tr.probability:.4f}")
         print(f"    central atoms : {sorted(tr.central_atom_indices)}")
         print(f"    left atoms    : {sorted(tr.left_atom_indices)}")
         print(f"    right atoms   : {sorted(tr.right_atom_indices)}")

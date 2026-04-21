@@ -5,13 +5,12 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tqdm import tqdm  # type: ignore[import-untyped]
-
 import parmed as pmd
+from tqdm import tqdm  # type: ignore[import-untyped]
 
 from polymer_md.building.data_models.monomer_spec import MonomerSpec
 from polymer_md.building.data_models.residue import AdditionPolymerResidue
-from polymer_md.building.data_models.trimer import Orientation, TrimerResult
+from polymer_md.building.data_models.trimer import TrimerResult
 from polymer_md.building.solvers.base import TransitionMatrixSolver
 from polymer_md.building.solvers.proportional import ProportionalSolver
 from polymer_md.building.trimer_builder import TrimerBuilder
@@ -62,6 +61,9 @@ class TrimerParameterisationPipeline:
             residues=residues, matrix=matrix, cap=self.cap
         ).build_all()
 
+        for trimer in sorted(all_trimers, key=lambda t: t.probability, reverse=True):
+            logger.info("  p=%.4f  %s", trimer.probability, trimer.label)
+
         selected = self._filter_by_probability(all_trimers)
         dropped = len(all_trimers) - len(selected)
         logger.info(
@@ -74,14 +76,7 @@ class TrimerParameterisationPipeline:
 
         results = []
         for trimer in tqdm(selected, desc="Parameterizing trimers", unit="trimer"):
-            logger.info(
-                "Parameterizing %s-%s-%s (%s) p=%.4f",
-                trimer.left_id,
-                trimer.central_id,
-                trimer.right_id,
-                trimer.orientation.name,
-                trimer.probability,
-            )
+            logger.info("Parameterizing %s  p=%.4f", trimer.label, trimer.probability)
             results.append(self._parameterise_trimer(trimer, output_dir))
 
         logger.info("Pipeline complete: %d trimers parameterised.", len(results))
@@ -148,10 +143,10 @@ class TrimerParameterisationPipeline:
 
     @staticmethod
     def _trimer_name(trimer: TrimerResult) -> str:
-        orientation_label = "HI" if trimer.orientation == Orientation.HEAD_IN else "TI"
+        bonds = f"{trimer.left_bond.label}_{trimer.right_bond.label}"
         smiles = RDKitHelper.canonical_smiles_stripped(trimer.mol)
         smiles_hash = hashlib.md5(smiles.encode()).hexdigest()[:6]
         return (
             f"{trimer.left_id}_{trimer.central_id}_{trimer.right_id}"
-            f"_{orientation_label}_{smiles_hash}"
+            f"_{bonds}_{smiles_hash}"
         )

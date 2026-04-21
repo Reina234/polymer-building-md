@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum, IntEnum, auto
+from enum import IntEnum
 
 from rdkit import Chem
 
@@ -15,9 +15,19 @@ class TrimerRegion(IntEnum):
     CAP = 3
 
 
-class Orientation(Enum):
-    HEAD_IN = auto()
-    TAIL_IN = auto()
+@dataclass(frozen=True)
+class BondType:
+    from_site: int
+    to_site: int
+
+    @property
+    def label(self) -> str:
+        f = "H" if self.from_site == 0 else "T"
+        t = "H" if self.to_site == 0 else "T"
+        return f + t
+
+    def __str__(self) -> str:
+        return self.label
 
 
 @dataclass(frozen=True)
@@ -25,10 +35,19 @@ class TrimerResult:
     left_id: str
     central_id: str
     right_id: str
-    orientation: Orientation
+    left_bond: BondType
+    right_bond: BondType
     mol: Chem.Mol = field(compare=False, hash=False)
     probability: float
     left_atom_indices: frozenset[int]
     central_atom_indices: frozenset[int]
     right_atom_indices: frozenset[int]
     cap_atom_indices: frozenset[int]
+
+    @property
+    def label(self) -> str:
+        return (
+            f"{self.left_id}[{self.left_bond}]"
+            f"{self.central_id}[{self.right_bond}]"
+            f"{self.right_id}"
+        )

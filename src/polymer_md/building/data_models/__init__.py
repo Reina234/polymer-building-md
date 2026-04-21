@@ -8,7 +8,7 @@ from .map_labels import (
 )
 from .residue import AdditionPolymerResidue
 from .transition_matrix import SiteKey, TransitionMatrix
-from .trimer import Orientation, TrimerRegion, TrimerResult
+from .trimer import BondType, TrimerRegion, TrimerResult
 
 __all__ = [
     "AdditionPolymerResidue",
@@ -16,7 +16,7 @@ __all__ = [
     "MapLabels",
     "MonomerComposition",
     "MonomerSpec",
-    "Orientation",
+    "BondType",
     "PolymerisationLabels",
     "RatioConstraint",
     "SITE_INDEX_TO_POLYMERISATION_LABEL",

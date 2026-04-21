@@ -35,6 +35,10 @@ class AdditionPolymerResidue:
         return self.label if self.label is not None else self.residue_smiles
 
     @property
+    def is_regiosymmetric(self) -> bool:
+        return RDKitHelper.wildcard_ranks_equal(self._mol)
+
+    @property
     def head(self) -> MolAtom:
         return MolAtom(
             mol=self._mol,
