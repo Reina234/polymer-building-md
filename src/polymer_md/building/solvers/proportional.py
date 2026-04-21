@@ -4,8 +4,8 @@ from typing import Optional
 
 import numpy as np
 
-from polymer_md.building.data_models.composition import MonomerComposition
 from polymer_md.building.data_models.constraints import TransitionConstraint
+from polymer_md.building.data_models.monomer_spec import MonomerSpec
 from polymer_md.building.data_models.transition_matrix import SiteKey, TransitionMatrix
 from polymer_md.building.solvers.base import TransitionMatrixSolver
 
@@ -13,8 +13,7 @@ from polymer_md.building.solvers.base import TransitionMatrixSolver
 class ProportionalSolver(TransitionMatrixSolver):
     def solve(
         self,
-        compositions: list[MonomerComposition],
-        sites_per_monomer: dict[str, int],
+        specs: list[MonomerSpec],
         constraints: Optional[list[TransitionConstraint]] = None,
     ) -> TransitionMatrix:
         if constraints:
@@ -22,19 +21,20 @@ class ProportionalSolver(TransitionMatrixSolver):
                 "ProportionalSolver does not support constraints. Use ScipySolver."
             )
 
-        total_weight = sum(comp.weight for comp in compositions)
+        total_weight = sum(spec.weight for spec in specs)
 
         site_keys: list[SiteKey] = []
-        for comp in compositions:
-            for site_index in range(sites_per_monomer[comp.residue_id]):
-                site_keys.append(SiteKey(comp.residue_id, site_index))
+        for spec in specs:
+            site_keys.append(SiteKey.head(spec.residue_id))
+            site_keys.append(SiteKey.tail(spec.residue_id))
 
         site_probability: dict[SiteKey, float] = {}
-        for comp in compositions:
-            num_sites = sites_per_monomer[comp.residue_id]
-            prob = (comp.weight / total_weight) / num_sites
-            for site_index in range(num_sites):
-                site_probability[SiteKey(comp.residue_id, site_index)] = prob
+        for spec in specs:
+            base = spec.weight / total_weight
+            site_probability[SiteKey.head(spec.residue_id)] = base * (
+                1.0 - spec.ht_fraction
+            )
+            site_probability[SiteKey.tail(spec.residue_id)] = base * spec.ht_fraction
 
         n_total_sites = len(site_keys)
         weights = np.array(

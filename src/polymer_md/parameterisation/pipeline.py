@@ -5,9 +5,10 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tqdm import tqdm
+
 import parmed as pmd
 
-from polymer_md.building.data_models.composition import MonomerComposition
 from polymer_md.building.data_models.monomer_spec import MonomerSpec
 from polymer_md.building.data_models.residue import AdditionPolymerResidue
 from polymer_md.building.data_models.trimer import Orientation, TrimerResult
@@ -37,7 +38,7 @@ class TrimerParameterisationPipeline:
     conformer_generator: ConformerGenerator = field(
         default_factory=ETKDGConformerGenerator
     )
-    probability_threshold: float = 0.0
+    probability_threshold: float = 0.01
     charge_method: str = "bcc"
 
     def run(self, output_dir: Path) -> list[ParameterisedTrimer]:
@@ -50,7 +51,7 @@ class TrimerParameterisationPipeline:
         )
 
         residues = self._build_residue_map()
-        matrix = self._solve_transition_matrix(residues)
+        matrix = self._solve_transition_matrix()
 
         logger.info("Building trimers...")
         all_trimers = TrimerBuilder(
@@ -87,13 +88,9 @@ class TrimerParameterisationPipeline:
         logger.info("Residue map: %s", list(residues.keys()))
         return residues
 
-    def _solve_transition_matrix(self, residues: dict[str, AdditionPolymerResidue]):
+    def _solve_transition_matrix(self):
         logger.info("Solving transition matrix with %s...", type(self.solver).__name__)
-        compositions = [
-            MonomerComposition(spec.residue_id, spec.weight) for spec in self.specs
-        ]
-        sites_per_monomer = {residue_id: 2 for residue_id in residues}
-        matrix = self.solver.solve(compositions, sites_per_monomer)
+        matrix = self.solver.solve(self.specs)
         logger.info("Transition matrix solved: %d sites.", matrix.n_sites)
         return matrix
 

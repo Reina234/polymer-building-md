@@ -36,7 +36,6 @@ def main() -> None:
         specs=specs,
         cap=BuiltinCap.METHYL,
         conformer_generator=ETKDGConformerGenerator(use_uff=False),
-        probability_threshold=0.0,
         charge_method="bcc",
     )
 

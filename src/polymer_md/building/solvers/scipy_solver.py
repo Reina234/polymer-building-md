@@ -5,12 +5,12 @@ from typing import Optional
 import numpy as np
 from scipy.optimize import linprog
 
-from polymer_md.building.data_models.composition import MonomerComposition
 from polymer_md.building.data_models.constraints import (
     FixedWeightConstraint,
     RatioConstraint,
     TransitionConstraint,
 )
+from polymer_md.building.data_models.monomer_spec import MonomerSpec
 from polymer_md.building.data_models.transition_matrix import SiteKey, TransitionMatrix
 from polymer_md.building.solvers.base import TransitionMatrixSolver
 
@@ -18,16 +18,13 @@ from polymer_md.building.solvers.base import TransitionMatrixSolver
 class ScipySolver(TransitionMatrixSolver):
     def solve(
         self,
-        compositions: list[MonomerComposition],
-        sites_per_monomer: dict[str, int],
+        specs: list[MonomerSpec],
         constraints: Optional[list[TransitionConstraint]] = None,
     ) -> TransitionMatrix:
         constraints = constraints or []
 
-        site_keys = self._build_site_keys(compositions, sites_per_monomer)
-        stationary_dist = self._build_stationary_distribution(
-            compositions, sites_per_monomer
-        )
+        site_keys = self._build_site_keys(specs)
+        stationary_dist = self._build_stationary_distribution(specs)
         site_to_index = {sk: i for i, sk in enumerate(site_keys)}
         n_total_sites = len(site_keys)
 
@@ -60,28 +57,21 @@ class ScipySolver(TransitionMatrixSolver):
         )
 
     @staticmethod
-    def _build_site_keys(
-        compositions: list[MonomerComposition],
-        sites_per_monomer: dict[str, int],
-    ) -> list[SiteKey]:
+    def _build_site_keys(specs: list[MonomerSpec]) -> list[SiteKey]:
         site_keys: list[SiteKey] = []
-        for comp in compositions:
-            for site_index in range(sites_per_monomer[comp.residue_id]):
-                site_keys.append(SiteKey(comp.residue_id, site_index))
+        for spec in specs:
+            site_keys.append(SiteKey.head(spec.residue_id))
+            site_keys.append(SiteKey.tail(spec.residue_id))
         return site_keys
 
     @staticmethod
-    def _build_stationary_distribution(
-        compositions: list[MonomerComposition],
-        sites_per_monomer: dict[str, int],
-    ) -> np.ndarray:
-        total_weight = sum(comp.weight for comp in compositions)
+    def _build_stationary_distribution(specs: list[MonomerSpec]) -> np.ndarray:
+        total_weight = sum(spec.weight for spec in specs)
         stationary_dist: list[float] = []
-        for comp in compositions:
-            num_sites = sites_per_monomer[comp.residue_id]
-            site_probability = (comp.weight / total_weight) / num_sites
-            for _ in range(num_sites):
-                stationary_dist.append(site_probability)
+        for spec in specs:
+            base = spec.weight / total_weight
+            stationary_dist.append(base * (1.0 - spec.ht_fraction))
+            stationary_dist.append(base * spec.ht_fraction)
         return np.array(stationary_dist)
 
     @staticmethod

@@ -64,19 +64,43 @@ class MonomerToResidueConverter:
     def _open_double_bond(
         cls, mol: Chem.rdchem.Mol, bond: Chem.rdchem.Bond
     ) -> Chem.Mol:
+        head_idx, tail_idx = cls._assign_head_tail(mol, bond)
         rw = RWMol(mol)
-        idx1 = bond.GetBeginAtomIdx()
-        idx2 = bond.GetEndAtomIdx()
 
-        rw.GetBondBetweenAtoms(idx1, idx2).SetBondType(Chem.rdchem.BondType.SINGLE)
+        rw.GetBondBetweenAtoms(head_idx, tail_idx).SetBondType(
+            Chem.rdchem.BondType.SINGLE
+        )
 
-        star1 = rw.AddAtom(cls._make_wildcard(MapLabels.HEAD))
-        star2 = rw.AddAtom(cls._make_wildcard(MapLabels.TAIL))
-        rw.AddBond(idx1, star1, Chem.rdchem.BondType.SINGLE)
-        rw.AddBond(idx2, star2, Chem.rdchem.BondType.SINGLE)
+        star_head = rw.AddAtom(cls._make_wildcard(MapLabels.HEAD))
+        star_tail = rw.AddAtom(cls._make_wildcard(MapLabels.TAIL))
+        rw.AddBond(head_idx, star_head, Chem.rdchem.BondType.SINGLE)
+        rw.AddBond(tail_idx, star_tail, Chem.rdchem.BondType.SINGLE)
 
         Chem.rdmolops.SanitizeMol(rw)
         return rw.GetMol()
+
+    @classmethod
+    def _assign_head_tail(
+        cls, mol: Chem.rdchem.Mol, bond: Chem.rdchem.Bond
+    ) -> tuple[int, int]:
+        idx1 = bond.GetBeginAtomIdx()
+        idx2 = bond.GetEndAtomIdx()
+        sub1 = cls._heavy_substituent_count(mol, idx1, exclude=idx2)
+        sub2 = cls._heavy_substituent_count(mol, idx2, exclude=idx1)
+        if sub1 >= sub2:
+            return idx1, idx2
+        return idx2, idx1
+
+    @staticmethod
+    def _heavy_substituent_count(
+        mol: Chem.rdchem.Mol, atom_idx: int, exclude: int
+    ) -> int:
+        atom = mol.GetAtomWithIdx(atom_idx)
+        return sum(
+            1
+            for nb in atom.GetNeighbors()
+            if nb.GetIdx() != exclude and nb.GetAtomicNum() != 1
+        )
 
     @classmethod
     def _make_wildcard(cls, site: MapLabels) -> Chem.rdchem.Atom:
