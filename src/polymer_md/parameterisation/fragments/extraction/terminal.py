@@ -16,23 +16,37 @@ class TerminalFragmentExtractor:
             parameterised_trimer.mol_3d,
             parameterised_trimer.structure,
         )
-        left_parmed_indices = RegionFragmentExtractor.resolve_parmed_indices(
-            heavy_atom_indices=parameterised_trimer.trimer_result.left_atom_indices,
-            mol_3d=parameterised_trimer.mol_3d,
-            mol3d_to_parmed=mol3d_to_parmed,
-        )
-        right_parmed_indices = RegionFragmentExtractor.resolve_parmed_indices(
-            heavy_atom_indices=parameterised_trimer.trimer_result.right_atom_indices,
-            mol_3d=parameterised_trimer.mol_3d,
-            mol3d_to_parmed=mol3d_to_parmed,
-        )
+        trimer_result = parameterised_trimer.trimer_result
         extractor = RegionFragmentExtractor()
-        return extractor.extract(
-            derived_mol=derived_mol,
-            structure=parameterised_trimer.structure,
-            region_parmed_indices=left_parmed_indices,
-        ) + extractor.extract(
-            derived_mol=derived_mol,
-            structure=parameterised_trimer.structure,
-            region_parmed_indices=right_parmed_indices,
+
+        left_indices = extractor.resolve_parmed_indices(
+            heavy_atom_indices=trimer_result.left_atom_indices,
+            mol_3d=parameterised_trimer.mol_3d,
+            mol3d_to_parmed=mol3d_to_parmed,
         )
+        central_indices = extractor.resolve_parmed_indices(
+            heavy_atom_indices=trimer_result.central_atom_indices,
+            mol_3d=parameterised_trimer.mol_3d,
+            mol3d_to_parmed=mol3d_to_parmed,
+        )
+        right_indices = extractor.resolve_parmed_indices(
+            heavy_atom_indices=trimer_result.right_atom_indices,
+            mol_3d=parameterised_trimer.mol_3d,
+            mol3d_to_parmed=mol3d_to_parmed,
+        )
+        context_indices = left_indices | central_indices | right_indices
+
+        return [
+            extractor.extract(
+                derived_mol=derived_mol,
+                structure=parameterised_trimer.structure,
+                context_parmed_indices=context_indices,
+                region_parmed_indices=left_indices,
+            ),
+            extractor.extract(
+                derived_mol=derived_mol,
+                structure=parameterised_trimer.structure,
+                context_parmed_indices=context_indices,
+                region_parmed_indices=right_indices,
+            ),
+        ]

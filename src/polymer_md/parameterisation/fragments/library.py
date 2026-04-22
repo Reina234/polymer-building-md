@@ -5,6 +5,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from polymer_md.parameterisation.fragments.data_models.annotated_members import (
+    AnnotatedAngle,
+    AnnotatedAtom,
+    AnnotatedBond,
+    AnnotatedDihedral,
+    AnnotatedMember,
+)
 from polymer_md.parameterisation.fragments.data_models.fragment import Fragment
 from polymer_md.parameterisation.fragments.data_models.match import (
     ParameterHit,
@@ -110,6 +117,70 @@ class FragmentLibrary:
             match_instance=data[_HitField.MATCH_INSTANCE],
             member_local_indices=tuple(data[_HitField.MEMBER_LOCAL_INDICES]),
         )
+
+    def to_fragments(self) -> list[Fragment]:
+        records_by_pattern = self._group_records_by_pattern()
+        return [
+            self._reconstruct_fragment(pattern, records)
+            for pattern, records in records_by_pattern.items()
+        ]
+
+    def _group_records_by_pattern(self) -> dict[str, list[ParameterRecord]]:
+        groups: dict[str, list[ParameterRecord]] = {}
+        for record in self.records:
+            pattern = self._pattern_for_record(record)
+            if pattern is None:
+                continue
+            groups.setdefault(pattern, []).append(record)
+        return groups
+
+    @staticmethod
+    def _pattern_for_record(record: ParameterRecord) -> str | None:
+        if not record.hits:
+            return None
+        return record.hits[0].fragment.pattern
+
+    def _reconstruct_fragment(
+        self,
+        pattern: str,
+        records: list[ParameterRecord],
+    ) -> Fragment:
+        members = self._build_annotated_members(records)
+        return Fragment(
+            pattern=pattern,
+            annotated_bonds=tuple(m for m in members if isinstance(m, AnnotatedBond)),
+            annotated_angles=tuple(m for m in members if isinstance(m, AnnotatedAngle)),
+            annotated_dihedrals=tuple(m for m in members if isinstance(m, AnnotatedDihedral)),
+            annotated_atoms=tuple(m for m in members if isinstance(m, AnnotatedAtom)),
+        )
+
+    @staticmethod
+    def _build_annotated_members(records: list[ParameterRecord]) -> list[AnnotatedMember]:
+        seen: set[tuple] = set()
+        members = []
+        for record in records:
+            if not record.hits:
+                continue
+            local_indices = record.hits[0].member_local_indices
+            key = (record.parameter, local_indices)
+            if key in seen:
+                continue
+            seen.add(key)
+            members.append(FragmentLibrary._build_member(record.parameter, local_indices))
+        return members
+
+    @staticmethod
+    def _build_member(
+        parameter: ForceFieldParameter,
+        local_indices: tuple[int, ...],
+    ) -> AnnotatedMember:
+        if isinstance(parameter, BondParameter):
+            return AnnotatedBond(local_indices=local_indices, parameter=parameter)
+        if isinstance(parameter, AngleParameter):
+            return AnnotatedAngle(local_indices=local_indices, parameter=parameter)
+        if isinstance(parameter, DihedralParameter):
+            return AnnotatedDihedral(local_indices=local_indices, parameter=parameter)
+        return AnnotatedAtom(local_index=local_indices[0], parameter=parameter)
 
     @staticmethod
     def _deserialise_parameter(kind: str, name: str) -> ForceFieldParameter:
