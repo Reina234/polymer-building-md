@@ -105,7 +105,7 @@ class RegionFragmentExtractor:
             atom_i, atom_j = bond.atom1.idx, bond.atom2.idx
             if not self._touches_region(region_parmed_indices, atom_i, atom_j):
                 continue
-            if atom_i not in global_to_local or atom_j not in global_to_local:
+            if not self._all_in_context(global_to_local, atom_i, atom_j):
                 continue
             key = self._sorted_pair(atom_i, atom_j)
             if key in seen:
@@ -129,7 +129,7 @@ class RegionFragmentExtractor:
             atom_i, atom_j, atom_k = angle.atom1.idx, angle.atom2.idx, angle.atom3.idx
             if atom_j not in region_parmed_indices:
                 continue
-            if atom_i not in global_to_local or atom_j not in global_to_local or atom_k not in global_to_local:
+            if not self._all_in_context(global_to_local, atom_i, atom_j, atom_k):
                 continue
             key = (min(atom_i, atom_k), atom_j, max(atom_i, atom_k))
             if key in seen:
@@ -160,7 +160,7 @@ class RegionFragmentExtractor:
             atom_l = dihedral.atom4.idx
             if not self._touches_region(region_parmed_indices, atom_j, atom_k):
                 continue
-            if any(idx not in global_to_local for idx in (atom_i, atom_j, atom_k, atom_l)):
+            if not self._all_in_context(global_to_local, atom_i, atom_j, atom_k, atom_l):
                 continue
             forward = (atom_i, atom_j, atom_k, atom_l)
             reverse = (atom_l, atom_k, atom_j, atom_i)
@@ -180,6 +180,10 @@ class RegionFragmentExtractor:
         atom_j: int,
     ) -> bool:
         return atom_i in region or atom_j in region
+
+    @staticmethod
+    def _all_in_context(global_to_local: dict[int, int], *indices: int) -> bool:
+        return all(idx in global_to_local for idx in indices)
 
     def _sorted_pair(self, atom_i: int, atom_j: int) -> tuple[int, int]:
         return (min(atom_i, atom_j), max(atom_i, atom_j))

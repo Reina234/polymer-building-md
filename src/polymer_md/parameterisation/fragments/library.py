@@ -85,14 +85,16 @@ class FragmentLibrary:
         parameter: ForceFieldParameter,
     ) -> list[float]:
         targets = self._targets_for_residue_position(residue_id, within_residue_position)
-        return [
-            hit.value
-            for record in self.records
-            if record.parameter == parameter
-            for hit in record.hits
-            if len(hit.member_local_indices) == 1
-            and (hit.fragment.pattern, hit.member_local_indices[0]) in targets
-        ]
+        values = []
+        for record in self.records:
+            if record.parameter != parameter:
+                continue
+            for hit in record.hits:
+                if len(hit.member_local_indices) != 1:
+                    continue
+                if (hit.fragment.pattern, hit.member_local_indices[0]) in targets:
+                    values.append(hit.value)
+        return values
 
     def metadata_for(self, pattern: str, local_idx: int) -> AtomMetadata | None:
         return self.atom_metadata.get(pattern, {}).get(local_idx)
@@ -102,13 +104,12 @@ class FragmentLibrary:
         residue_id: str,
         within_residue_position: int,
     ) -> set[tuple[str, int]]:
-        return {
-            (pattern, local_idx)
-            for pattern, local_map in self.atom_metadata.items()
-            for local_idx, meta in local_map.items()
-            if meta.residue_id == residue_id
-            and meta.within_residue_position == within_residue_position
-        }
+        targets: set[tuple[str, int]] = set()
+        for pattern, local_map in self.atom_metadata.items():
+            for local_idx, meta in local_map.items():
+                if meta.residue_id == residue_id and meta.within_residue_position == within_residue_position:
+                    targets.add((pattern, local_idx))
+        return targets
 
     def save(self, path: Path) -> None:
         data = {
@@ -125,31 +126,29 @@ class FragmentLibrary:
         return cls(records=records, atom_metadata=atom_metadata)
 
     def _metadata_to_dict(self) -> dict:
-        return {
-            pattern: {
-                str(local_idx): {
+        result: dict = {}
+        for pattern, local_map in self.atom_metadata.items():
+            result[pattern] = {}
+            for local_idx, meta in local_map.items():
+                result[pattern][str(local_idx)] = {
                     _MetaField.GAFF2_TYPE: meta.gaff2_type,
                     _MetaField.RESIDUE_ID: meta.residue_id,
                     _MetaField.WITHIN_RESIDUE_POSITION: meta.within_residue_position,
                 }
-                for local_idx, meta in local_map.items()
-            }
-            for pattern, local_map in self.atom_metadata.items()
-        }
+        return result
 
     @staticmethod
     def _metadata_from_dict(data: dict) -> dict[str, dict[int, AtomMetadata]]:
-        return {
-            pattern: {
-                int(local_idx): AtomMetadata(
+        result: dict[str, dict[int, AtomMetadata]] = {}
+        for pattern, local_map in data.items():
+            result[pattern] = {}
+            for local_idx, meta in local_map.items():
+                result[pattern][int(local_idx)] = AtomMetadata(
                     gaff2_type=meta[_MetaField.GAFF2_TYPE],
                     residue_id=meta[_MetaField.RESIDUE_ID],
                     within_residue_position=meta[_MetaField.WITHIN_RESIDUE_POSITION],
                 )
-                for local_idx, meta in local_map.items()
-            }
-            for pattern, local_map in data.items()
-        }
+        return result
 
     @staticmethod
     def _record_to_dict(record: ParameterRecord) -> dict:

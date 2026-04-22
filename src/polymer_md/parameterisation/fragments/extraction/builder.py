@@ -97,13 +97,20 @@ class FragmentLibraryBuilder:
         mol3d_to_parmed: dict[int, int],
     ) -> dict[int, tuple[str, int]]:
         trimer_result = parameterised_trimer.trimer_result
-        regions = {
-            trimer_result.left_id: trimer_result.left_atom_indices,
-            trimer_result.central_id: trimer_result.central_atom_indices,
-            trimer_result.right_id: trimer_result.right_atom_indices,
-        }
+        regions = [
+            (trimer_result.left_id, trimer_result.left_atom_indices),
+            (trimer_result.central_id, trimer_result.central_atom_indices),
+            (trimer_result.right_id, trimer_result.right_atom_indices),
+        ]
+        return FragmentLibraryBuilder._region_position_entries(regions, mol3d_to_parmed)
+
+    @staticmethod
+    def _region_position_entries(
+        regions: list[tuple[str, frozenset[int]]],
+        mol3d_to_parmed: dict[int, int],
+    ) -> dict[int, tuple[str, int]]:
         parmed_to_residue_position: dict[int, tuple[str, int]] = {}
-        for residue_id, mol3d_heavy_indices in regions.items():
+        for residue_id, mol3d_heavy_indices in regions:
             for position, mol3d_idx in enumerate(sorted(mol3d_heavy_indices)):
                 parmed_idx = mol3d_to_parmed.get(mol3d_idx)
                 if parmed_idx is not None:

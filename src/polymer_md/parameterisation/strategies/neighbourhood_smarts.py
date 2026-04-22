@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from rdkit import Chem
 
+from polymer_md.parameterisation.fragments.data_models.atom_metadata import AtomMetadata
+from polymer_md.parameterisation.fragments.data_models.match import ParameterRecord
 from polymer_md.parameterisation.fragments.data_models.parameters import AtomParameter, ForceFieldParameter
 from polymer_md.parameterisation.fragments.extraction.smarts_builder import SmartsBuilder
 from polymer_md.parameterisation.strategies.base import MissingParameterError, StrategyContext
@@ -53,55 +55,85 @@ class NeighbourhoodSMARTSStrategy:
         parameter: ForceFieldParameter,
         context: StrategyContext,
     ) -> list[float]:
-        full_ball = self._ball_around_atom(context.derived_mol, atom_idx, radius)
+        result = self._neighbourhood_query(context.derived_mol, atom_idx, radius)
+        if result is None:
+            return []
+        neighbourhood_query, centre_local_idx = result
+
+        values: list[float] = []
+        seen_records: set[int] = set()
+        for pattern, local_map in context.library.atom_metadata.items():
+            matched_locals = self._matched_local_indices(
+                pattern, neighbourhood_query, centre_local_idx,
+                local_map, residue_id, within_residue_position,
+            )
+            for local_idx in matched_locals:
+                value = self._record_value(
+                    pattern, local_idx, parameter, context.library.records, seen_records
+                )
+                if value is not None:
+                    values.append(value)
+        return values
+
+    def _neighbourhood_query(
+        self,
+        mol: Chem.Mol,
+        atom_idx: int,
+        radius: int,
+    ) -> tuple[Chem.Mol, int] | None:
+        full_ball = self._ball_around_atom(mol, atom_idx, radius)
         heavy_ball = tuple(
             idx for idx in full_ball
-            if context.derived_mol.GetAtomWithIdx(idx).GetAtomicNum() != 1
+            if mol.GetAtomWithIdx(idx).GetAtomicNum() != 1
         )
         if not heavy_ball:
+            return None
+        smarts, centre_to_local = SmartsBuilder.subgraph(mol, heavy_ball)
+        query = Chem.MolFromSmarts(smarts)
+        if query is None:
+            return None
+        return query, centre_to_local[atom_idx]
+
+    @staticmethod
+    def _matched_local_indices(
+        pattern: str,
+        neighbourhood_query: Chem.Mol,
+        centre_local_idx: int,
+        local_map: dict[int, AtomMetadata],
+        residue_id: str,
+        within_residue_position: int,
+    ) -> list[int]:
+        fragment_mol = Chem.MolFromSmarts(pattern)
+        if fragment_mol is None:
             return []
+        matched = []
+        for submatch in fragment_mol.GetSubstructMatches(neighbourhood_query):
+            local_idx = submatch[centre_local_idx]
+            meta = local_map.get(local_idx)
+            if meta is not None and meta.residue_id == residue_id and meta.within_residue_position == within_residue_position:
+                matched.append(local_idx)
+        return matched
 
-        neighbourhood_smarts, centre_to_local = SmartsBuilder.subgraph(
-            context.derived_mol, heavy_ball
-        )
-        centre_local_idx = centre_to_local[atom_idx]
-        neighbourhood_query = Chem.MolFromSmarts(neighbourhood_smarts)
-        if neighbourhood_query is None:
-            return []
-
-        values = []
-        seen_records: set[int] = set()
-
-        for pattern, local_map in context.library.atom_metadata.items():
-            fragment_mol = Chem.MolFromSmarts(pattern)
-            if fragment_mol is None:
+    @staticmethod
+    def _record_value(
+        pattern: str,
+        local_idx: int,
+        parameter: ForceFieldParameter,
+        records: tuple[ParameterRecord, ...],
+        seen_records: set[int],
+    ) -> float | None:
+        for record_idx, record in enumerate(records):
+            if record_idx in seen_records or record.parameter != parameter:
                 continue
-
-            submatches = fragment_mol.GetSubstructMatches(neighbourhood_query)
-            for submatch in submatches:
-                matched_fragment_local_idx = submatch[centre_local_idx]
-                meta = local_map.get(matched_fragment_local_idx)
-                if meta is None:
-                    continue
-                if meta.residue_id != residue_id or meta.within_residue_position != within_residue_position:
-                    continue
-
-                for record_idx, record in enumerate(context.library.records):
-                    if record_idx in seen_records:
-                        continue
-                    if record.parameter != parameter:
-                        continue
-                    for hit in record.hits:
-                        if (
-                            hit.fragment.pattern == pattern
-                            and len(hit.member_local_indices) == 1
-                            and hit.member_local_indices[0] == matched_fragment_local_idx
-                        ):
-                            values.append(hit.value)
-                            seen_records.add(record_idx)
-                            break
-
-        return values
+            for hit in record.hits:
+                if (
+                    hit.fragment.pattern == pattern
+                    and len(hit.member_local_indices) == 1
+                    and hit.member_local_indices[0] == local_idx
+                ):
+                    seen_records.add(record_idx)
+                    return hit.value
+        return None
 
     @staticmethod
     def _ball_around_atom(mol: Chem.Mol, atom_idx: int, radius: int) -> tuple[int, ...]:
