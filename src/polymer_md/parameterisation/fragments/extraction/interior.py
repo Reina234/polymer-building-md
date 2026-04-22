@@ -10,7 +10,7 @@ from polymer_md.utils.parmed_helper import CoordinateCrosswalk, StructureMolDeri
 
 @dataclass
 class InteriorFragmentExtractor:
-    def extract(self, parameterised_trimer: ParameterisedTrimer) -> list[Fragment]:
+    def extract(self, parameterised_trimer: ParameterisedTrimer) -> list[tuple[Fragment, dict[int, int]]]:
         derived_mol = StructureMolDeriver.derive(parameterised_trimer.structure)
         mol3d_to_parmed = CoordinateCrosswalk.map_mol3d_to_parmed(
             parameterised_trimer.mol_3d,
@@ -42,5 +42,5 @@ class InteriorFragmentExtractor:
                 structure=parameterised_trimer.structure,
                 context_parmed_indices=context_indices,
                 region_parmed_indices=central_indices,
-            )
+            ),
         ]

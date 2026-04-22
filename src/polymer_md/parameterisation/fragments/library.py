@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
@@ -12,6 +12,7 @@ from polymer_md.parameterisation.fragments.data_models.annotated_members import 
     AnnotatedDihedral,
     AnnotatedMember,
 )
+from polymer_md.parameterisation.fragments.data_models.atom_metadata import AtomMetadata
 from polymer_md.parameterisation.fragments.data_models.fragment import Fragment
 from polymer_md.parameterisation.fragments.data_models.match import (
     ParameterHit,
@@ -56,9 +57,16 @@ class _HitField(StrEnum):
     MEMBER_LOCAL_INDICES = "member_local_indices"
 
 
+class _MetaField(StrEnum):
+    GAFF2_TYPE = "gaff2_type"
+    RESIDUE_ID = "residue_id"
+    WITHIN_RESIDUE_POSITION = "within_residue_position"
+
+
 @dataclass(frozen=True)
 class FragmentLibrary:
     records: tuple[ParameterRecord, ...]
+    atom_metadata: dict[str, dict[int, AtomMetadata]] = field(default_factory=dict)
 
     def query(
         self,
@@ -70,14 +78,78 @@ class FragmentLibrary:
                 return record
         return None
 
+    def hit_values_for_residue_position(
+        self,
+        residue_id: str,
+        within_residue_position: int,
+        parameter: ForceFieldParameter,
+    ) -> list[float]:
+        targets = self._targets_for_residue_position(residue_id, within_residue_position)
+        return [
+            hit.value
+            for record in self.records
+            if record.parameter == parameter
+            for hit in record.hits
+            if len(hit.member_local_indices) == 1
+            and (hit.fragment.pattern, hit.member_local_indices[0]) in targets
+        ]
+
+    def metadata_for(self, pattern: str, local_idx: int) -> AtomMetadata | None:
+        return self.atom_metadata.get(pattern, {}).get(local_idx)
+
+    def _targets_for_residue_position(
+        self,
+        residue_id: str,
+        within_residue_position: int,
+    ) -> set[tuple[str, int]]:
+        return {
+            (pattern, local_idx)
+            for pattern, local_map in self.atom_metadata.items()
+            for local_idx, meta in local_map.items()
+            if meta.residue_id == residue_id
+            and meta.within_residue_position == within_residue_position
+        }
+
     def save(self, path: Path) -> None:
-        data = [self._record_to_dict(record) for record in self.records]
+        data = {
+            "records": [self._record_to_dict(record) for record in self.records],
+            "atom_metadata": self._metadata_to_dict(),
+        }
         path.write_text(json.dumps(data, indent=2))
 
     @classmethod
     def load(cls, path: Path) -> FragmentLibrary:
         data = json.loads(path.read_text())
-        return cls(records=tuple(cls._record_from_dict(entry) for entry in data))
+        records = tuple(cls._record_from_dict(entry) for entry in data["records"])
+        atom_metadata = cls._metadata_from_dict(data.get("atom_metadata", {}))
+        return cls(records=records, atom_metadata=atom_metadata)
+
+    def _metadata_to_dict(self) -> dict:
+        return {
+            pattern: {
+                str(local_idx): {
+                    _MetaField.GAFF2_TYPE: meta.gaff2_type,
+                    _MetaField.RESIDUE_ID: meta.residue_id,
+                    _MetaField.WITHIN_RESIDUE_POSITION: meta.within_residue_position,
+                }
+                for local_idx, meta in local_map.items()
+            }
+            for pattern, local_map in self.atom_metadata.items()
+        }
+
+    @staticmethod
+    def _metadata_from_dict(data: dict) -> dict[str, dict[int, AtomMetadata]]:
+        return {
+            pattern: {
+                int(local_idx): AtomMetadata(
+                    gaff2_type=meta[_MetaField.GAFF2_TYPE],
+                    residue_id=meta[_MetaField.RESIDUE_ID],
+                    within_residue_position=meta[_MetaField.WITHIN_RESIDUE_POSITION],
+                )
+                for local_idx, meta in local_map.items()
+            }
+            for pattern, local_map in data.items()
+        }
 
     @staticmethod
     def _record_to_dict(record: ParameterRecord) -> dict:

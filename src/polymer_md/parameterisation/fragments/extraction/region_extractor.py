@@ -30,7 +30,7 @@ class RegionFragmentExtractor:
         structure: pmd.Structure,
         context_parmed_indices: frozenset[int],
         region_parmed_indices: frozenset[int],
-    ) -> Fragment:
+    ) -> tuple[Fragment, dict[int, int]]:
         pattern, global_to_local = SmartsBuilder.subgraph(
             derived_mol, tuple(sorted(context_parmed_indices))
         )
@@ -40,13 +40,14 @@ class RegionFragmentExtractor:
             + self._extract_angle_members(structure, region_parmed_indices, global_to_local)
             + self._extract_dihedral_members(structure, region_parmed_indices, global_to_local)
         )
-        return Fragment(
+        fragment = Fragment(
             pattern=pattern,
             annotated_atoms=tuple(m for m in members if isinstance(m, AnnotatedAtom)),
             annotated_bonds=tuple(m for m in members if isinstance(m, AnnotatedBond)),
             annotated_angles=tuple(m for m in members if isinstance(m, AnnotatedAngle)),
             annotated_dihedrals=tuple(m for m in members if isinstance(m, AnnotatedDihedral)),
         )
+        return fragment, global_to_local
 
     @staticmethod
     def resolve_parmed_indices(
