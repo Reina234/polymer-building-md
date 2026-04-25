@@ -99,6 +99,21 @@ class FragmentLibrary:
     def metadata_for(self, pattern: str, local_idx: int) -> AtomMetadata | None:
         return self.atom_metadata.get(pattern, {}).get(local_idx)
 
+    def values_for_member(
+        self,
+        pattern: str,
+        member_local_indices: tuple[int, ...],
+        parameter: ForceFieldParameter,
+    ) -> list[float]:
+        values = []
+        for record in self.records:
+            if record.parameter != parameter:
+                continue
+            for hit in record.hits:
+                if hit.fragment.pattern == pattern and hit.member_local_indices == member_local_indices:
+                    values.append(hit.value)
+        return values
+
     def _targets_for_residue_position(
         self,
         residue_id: str,
