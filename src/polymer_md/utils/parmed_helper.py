@@ -4,6 +4,7 @@ import tempfile
 
 import numpy as np
 import parmed as pmd
+from parmed.topologyobjects import DihedralTypeList
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds
 

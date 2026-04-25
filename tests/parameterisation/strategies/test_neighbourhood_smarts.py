@@ -246,3 +246,102 @@ class TestNeighbourhoodSMARTSStrategy:
 
         # assert – will average whichever matches are found at the largest radius
         assert isinstance(result, float)
+
+
+class TestNeighbourhoodSMARTSEdgeCases:
+    def test_empty_heavy_ball_returns_no_values(self, propane_mol, library_with_metadata):
+        # A hydrogen centre has no heavy atoms in its ball at radius 0 → heavy_ball is empty
+        # Find a hydrogen atom index
+        h_idx = next(
+            i for i in range(propane_mol.GetNumAtoms())
+            if propane_mol.GetAtomWithIdx(i).GetAtomicNum() == 1
+        )
+        strategy = NeighbourhoodSMARTSStrategy(max_radius=0, min_radius=0, min_matches=1)
+        context = StrategyContext(
+            library=library_with_metadata,
+            derived_mol=propane_mol,
+            polymer_atom_metadata={h_idx: ("S", 0)},
+        )
+        # At radius 0, ball is just the H atom → heavy_ball is empty → _neighbourhood_query returns None
+        result = strategy._collect_values_at_radius(
+            h_idx, 0, "S", 0, AtomParameter.CHARGE, context
+        )
+        assert result == []
+
+    def test_invalid_fragment_pattern_in_metadata_skipped(self, propane_mol):
+        # Library with an invalid SMARTS pattern in atom_metadata
+        from polymer_md.parameterisation.fragments.data_models.atom_metadata import AtomMetadata
+        from polymer_md.parameterisation.fragments.data_models.match import ParameterHit, ParameterRecord
+        from polymer_md.parameterisation.fragments.data_models.fragment import Fragment
+
+        bad_pattern = "[invalid!!!"
+        frag = Fragment(pattern=bad_pattern)
+        hit = ParameterHit(value=-0.1, fragment=frag, match_instance=0, member_local_indices=(0,))
+        record = ParameterRecord(global_indices=(0,), parameter=AtomParameter.CHARGE, hits=(hit,))
+        library = FragmentLibrary(
+            records=(record,),
+            atom_metadata={bad_pattern: {0: AtomMetadata(gaff2_type="c3", residue_id="S", within_residue_position=0)}},
+        )
+        heavy = tuple(
+            i for i in range(propane_mol.GetNumAtoms())
+            if propane_mol.GetAtomWithIdx(i).GetAtomicNum() != 1
+        )
+        centre_idx = heavy[0]
+        context = StrategyContext(
+            library=library,
+            derived_mol=propane_mol,
+            polymer_atom_metadata={centre_idx: ("S", 0)},
+        )
+        strategy = NeighbourhoodSMARTSStrategy(max_radius=3, min_radius=1, min_matches=1)
+        # _matched_local_indices returns [] for invalid fragment pattern → no values → raises
+        with pytest.raises(MissingParameterError):
+            strategy.resolve((centre_idx,), AtomParameter.CHARGE, context)
+
+    def test_deduplication_of_record_values(self, propane_mol):
+        # Same library record matched twice via two different neighbourhood sub-patterns
+        # should only contribute once (seen_records dedup)
+        heavy = tuple(
+            i for i in range(propane_mol.GetNumAtoms())
+            if propane_mol.GetAtomWithIdx(i).GetAtomicNum() != 1
+        )
+        centre_idx = heavy[0]
+        library = _make_library_from_mol(propane_mol, heavy, centre_idx, "S", 0, -0.10)
+        context = StrategyContext(
+            library=library,
+            derived_mol=propane_mol,
+            polymer_atom_metadata={centre_idx: ("S", 0)},
+        )
+        strategy = NeighbourhoodSMARTSStrategy(max_radius=3, min_radius=1, min_matches=1)
+        result = strategy.resolve((centre_idx,), AtomParameter.CHARGE, context)
+        # Only one record → should return exactly -0.10, not an average of duplicates
+        assert pytest.approx(result, abs=1e-6) == -0.10
+
+    def test_neighbourhood_query_returns_none_when_smarts_invalid(self, propane_mol):
+        from unittest.mock import patch
+        strategy = NeighbourhoodSMARTSStrategy(max_radius=3, min_radius=1, min_matches=1)
+        with patch(
+            "polymer_md.parameterisation.strategies.neighbourhood_smarts.Chem.MolFromSmarts",
+            return_value=None,
+        ):
+            result = strategy._neighbourhood_query(propane_mol, 1, radius=1)
+        assert result is None
+
+    def test_record_value_returns_none_when_pattern_not_in_any_hit(self):
+        frag = Fragment(pattern="[#6;A]")
+        hit = ParameterHit(value=-0.1, fragment=frag, match_instance=0, member_local_indices=(0,))
+        record = ParameterRecord(global_indices=(0,), parameter=AtomParameter.CHARGE, hits=(hit,))
+        seen_records: set[int] = set()
+        result = NeighbourhoodSMARTSStrategy._record_value(
+            "NONEXISTENT_PATTERN", 0, AtomParameter.CHARGE, (record,), seen_records
+        )
+        assert result is None
+
+    def test_record_value_skips_already_seen_record_index(self):
+        frag = Fragment(pattern="[#6;A]")
+        hit = ParameterHit(value=-0.1, fragment=frag, match_instance=0, member_local_indices=(0,))
+        record = ParameterRecord(global_indices=(0,), parameter=AtomParameter.CHARGE, hits=(hit,))
+        seen_records = {0}
+        result = NeighbourhoodSMARTSStrategy._record_value(
+            "[#6;A]", 0, AtomParameter.CHARGE, (record,), seen_records
+        )
+        assert result is None

@@ -237,3 +237,43 @@ class TestPolymerPipelineRun:
                 pipeline.run()
 
             mock_adj.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests: ParameterisedMolecule.from_gromacs_files
+# ---------------------------------------------------------------------------
+
+class TestParameterisedMoleculeFromGromacsFiles:
+    def test_loads_structure_from_gromacs_files(self):
+        from polymer_md.parameterisation.data_models.parameterised_mol import ParameterisedMolecule
+        from polymer_md.conversion.gromacs_files import GromacsFiles
+
+        mock_structure = MagicMock(spec=pmd.Structure)
+        mock_gromacs = MagicMock(spec=GromacsFiles)
+        mock_gromacs.top = MagicMock()
+        mock_gromacs.gro = MagicMock()
+        mock_mol = Chem.MolFromSmiles("CCC")
+
+        with patch("polymer_md.parameterisation.data_models.parameterised_mol.pmd.load_file", return_value=mock_structure) as mock_load:
+            result = ParameterisedMolecule.from_gromacs_files(mock_gromacs, mock_mol)
+
+        mock_load.assert_called_once()
+        assert result.structure is mock_structure
+        assert result.mol is mock_mol
+        assert result.source is mock_gromacs
+
+    def test_load_file_called_with_top_and_gro_paths(self):
+        from polymer_md.parameterisation.data_models.parameterised_mol import ParameterisedMolecule
+        from polymer_md.conversion.gromacs_files import GromacsFiles
+
+        mock_gromacs = MagicMock(spec=GromacsFiles)
+        mock_gromacs.top = "/fake/top.top"
+        mock_gromacs.gro = "/fake/conf.gro"
+        mock_mol = Chem.MolFromSmiles("CCC")
+
+        with patch("polymer_md.parameterisation.data_models.parameterised_mol.pmd.load_file", return_value=MagicMock()) as mock_load:
+            ParameterisedMolecule.from_gromacs_files(mock_gromacs, mock_mol)
+
+        call_args = mock_load.call_args
+        assert str(mock_gromacs.top) in call_args.args or str(mock_gromacs.top) in str(call_args)
+        assert "xyz" in call_args.kwargs or str(mock_gromacs.gro) in str(call_args)

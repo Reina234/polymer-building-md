@@ -127,7 +127,7 @@ class FragmentMatcher:
             return float(bond.type.k)
         if parameter == BondParameter.EQUILIBRIUM_LENGTH:
             return float(bond.type.req)
-        raise ValueError(f"Unknown bond parameter: {parameter}")
+        raise ValueError(f"Unknown bond parameter: {parameter}")  # pragma: no cover
 
     @staticmethod
     def _angle_value(
@@ -147,7 +147,7 @@ class FragmentMatcher:
             return float(angle.type.k)
         if parameter == AngleParameter.EQUILIBRIUM_ANGLE:
             return float(angle.type.theteq)
-        raise ValueError(f"Unknown angle parameter: {parameter}")
+        raise ValueError(f"Unknown angle parameter: {parameter}")  # pragma: no cover
 
     @staticmethod
     def _dihedral_value(
@@ -165,13 +165,16 @@ class FragmentMatcher:
 
     @staticmethod
     def _read_dihedral_parameter(dihedral: pmd.Dihedral, parameter: DihedralParameter) -> float:
+        dtype = dihedral.type
+        if not hasattr(dtype, "phi_k"):
+            dtype = dtype[0]
         if parameter == DihedralParameter.FORCE_CONSTANT:
-            return float(dihedral.type.phi_k)
+            return float(dtype.phi_k)
         if parameter == DihedralParameter.PHASE:
-            return float(dihedral.type.phase)
+            return float(dtype.phase)
         if parameter == DihedralParameter.PERIODICITY:
-            return float(dihedral.type.per)
-        raise ValueError(f"Unknown dihedral parameter: {parameter}")
+            return float(dtype.per)
+        raise ValueError(f"Unknown dihedral parameter: {parameter}")  # pragma: no cover
 
     @staticmethod
     def _atom_value(
@@ -188,4 +191,4 @@ class FragmentMatcher:
             return float(atom.sigma)
         if parameter == AtomParameter.MASS:
             return float(atom.mass)
-        raise ValueError(f"Unknown atom parameter: {parameter}")
+        raise ValueError(f"Unknown atom parameter: {parameter}")  # pragma: no cover

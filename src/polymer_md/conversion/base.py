@@ -57,7 +57,7 @@ class Converter:
         output_type: type | FileFormats,
         output_dir: Path,
         output_name: str,
-        overwrite: bool = False,
+        overwrite: bool = True,
     ) -> Any:
         handler = self._resolve_handler(source, output_type)
         return handler(source, output_dir, output_name, overwrite)

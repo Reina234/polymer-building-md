@@ -111,5 +111,5 @@ class PolymerParameterisationPipeline:
         itp_path = self.output_dir / f"{name}.itp"
         structure.save(str(gro_path), overwrite=True)
         structure.save(str(top_path), overwrite=True)
-        structure.save(str(itp_path), overwrite=True)
+        structure.save(str(itp_path), format="GROMACS", overwrite=True)
         return GromacsFiles(itp=itp_path, gro=gro_path, top=top_path)
