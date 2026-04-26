@@ -142,15 +142,24 @@ class TestInteriorFragmentExtractor:
         assert kwargs["derived_mol"] is mock_derived
 
 
-class TestTerminalFragmentExtractor:
-    def test_extract_returns_two_pairs(self):
+_CAP_LEFT = frozenset({10, 11})
+_CAP_RIGHT = frozenset({12, 13})
+_EMPTY_CAP = frozenset()
+
+
+class TestTerminalFragmentExtractorNoCaps:
+    def test_extract_returns_two_pairs_when_no_caps(self):
         pt = _make_parameterised_trimer()
         with (
             patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
             patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
-            patch.object(RegionFragmentExtractor, "resolve_parmed_indices", side_effect=[_LEFT, _CENTRAL, _RIGHT]),
             patch.object(
-                RegionFragmentExtractor, "extract", side_effect=[(MagicMock(), {}), (MagicMock(), {})]
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _EMPTY_CAP],
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {}), (MagicMock(), {})],
             ),
         ):
             result = TerminalFragmentExtractor().extract(pt)
@@ -161,67 +170,102 @@ class TestTerminalFragmentExtractor:
         with (
             patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
             patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
-            patch.object(RegionFragmentExtractor, "resolve_parmed_indices", side_effect=[_LEFT, _CENTRAL, _RIGHT]),
             patch.object(
-                RegionFragmentExtractor, "extract", side_effect=[(MagicMock(), {}), (MagicMock(), {})]
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _EMPTY_CAP],
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {}), (MagicMock(), {})],
             ) as mock_extract,
         ):
             TerminalFragmentExtractor().extract(pt)
-        first_kwargs = mock_extract.call_args_list[0].kwargs
-        assert first_kwargs["region_parmed_indices"] == _LEFT
+        assert mock_extract.call_args_list[0].kwargs["region_parmed_indices"] == _LEFT
 
     def test_extract_second_pair_region_is_right(self):
         pt = _make_parameterised_trimer()
         with (
             patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
             patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
-            patch.object(RegionFragmentExtractor, "resolve_parmed_indices", side_effect=[_LEFT, _CENTRAL, _RIGHT]),
             patch.object(
-                RegionFragmentExtractor, "extract", side_effect=[(MagicMock(), {}), (MagicMock(), {})]
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _EMPTY_CAP],
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {}), (MagicMock(), {})],
             ) as mock_extract,
         ):
             TerminalFragmentExtractor().extract(pt)
-        second_kwargs = mock_extract.call_args_list[1].kwargs
-        assert second_kwargs["region_parmed_indices"] == _RIGHT
+        assert mock_extract.call_args_list[1].kwargs["region_parmed_indices"] == _RIGHT
 
-    def test_extract_both_calls_share_same_context(self):
-        pt = _make_parameterised_trimer()
-        with (
-            patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
-            patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
-            patch.object(RegionFragmentExtractor, "resolve_parmed_indices", side_effect=[_LEFT, _CENTRAL, _RIGHT]),
-            patch.object(
-                RegionFragmentExtractor, "extract", side_effect=[(MagicMock(), {}), (MagicMock(), {})]
-            ) as mock_extract,
-        ):
-            TerminalFragmentExtractor().extract(pt)
-        first_ctx = mock_extract.call_args_list[0].kwargs["context_parmed_indices"]
-        second_ctx = mock_extract.call_args_list[1].kwargs["context_parmed_indices"]
-        assert first_ctx == second_ctx == _LEFT | _CENTRAL | _RIGHT
-
-    def test_extract_calls_resolve_parmed_indices_three_times(self):
+    def test_left_context_contains_left_and_central_only(self):
         pt = _make_parameterised_trimer()
         with (
             patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
             patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
             patch.object(
-                RegionFragmentExtractor, "resolve_parmed_indices", side_effect=[_LEFT, _CENTRAL, _RIGHT]
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _EMPTY_CAP],
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {}), (MagicMock(), {})],
+            ) as mock_extract,
+        ):
+            TerminalFragmentExtractor().extract(pt)
+        left_ctx = mock_extract.call_args_list[0].kwargs["context_parmed_indices"]
+        assert left_ctx == _LEFT | _CENTRAL
+        assert _RIGHT not in left_ctx
+
+    def test_right_context_contains_right_and_central_only(self):
+        pt = _make_parameterised_trimer()
+        with (
+            patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
+            patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
+            patch.object(
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _EMPTY_CAP],
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {}), (MagicMock(), {})],
+            ) as mock_extract,
+        ):
+            TerminalFragmentExtractor().extract(pt)
+        right_ctx = mock_extract.call_args_list[1].kwargs["context_parmed_indices"]
+        assert right_ctx == _RIGHT | _CENTRAL
+        assert _LEFT not in right_ctx
+
+    def test_extract_calls_resolve_parmed_indices_four_times(self):
+        pt = _make_parameterised_trimer()
+        with (
+            patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
+            patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
+            patch.object(
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _EMPTY_CAP],
             ) as mock_resolve,
             patch.object(
-                RegionFragmentExtractor, "extract", side_effect=[(MagicMock(), {}), (MagicMock(), {})]
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {}), (MagicMock(), {})],
             ),
         ):
             TerminalFragmentExtractor().extract(pt)
-        assert mock_resolve.call_count == 3
+        assert mock_resolve.call_count == 4
 
     def test_extract_calls_region_extract_exactly_twice(self):
         pt = _make_parameterised_trimer()
         with (
             patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
             patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
-            patch.object(RegionFragmentExtractor, "resolve_parmed_indices", side_effect=[_LEFT, _CENTRAL, _RIGHT]),
             patch.object(
-                RegionFragmentExtractor, "extract", side_effect=[(MagicMock(), {}), (MagicMock(), {})]
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _EMPTY_CAP],
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {}), (MagicMock(), {})],
             ) as mock_extract,
         ):
             TerminalFragmentExtractor().extract(pt)
@@ -232,11 +276,110 @@ class TestTerminalFragmentExtractor:
         with (
             patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
             patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
-            patch.object(RegionFragmentExtractor, "resolve_parmed_indices", side_effect=[_LEFT, _CENTRAL, _RIGHT]),
             patch.object(
-                RegionFragmentExtractor, "extract", side_effect=[(MagicMock(), {}), (MagicMock(), {})]
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _EMPTY_CAP],
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {}), (MagicMock(), {})],
             ) as mock_extract,
         ):
             TerminalFragmentExtractor().extract(pt)
         regions = [call.kwargs["region_parmed_indices"] for call in mock_extract.call_args_list]
         assert _CENTRAL not in regions
+
+
+class TestTerminalFragmentExtractorWithCaps:
+    def test_extract_returns_four_pairs_when_caps_present(self):
+        pt = _make_parameterised_trimer()
+        with (
+            patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
+            patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
+            patch.object(
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _CAP_LEFT | _CAP_RIGHT],
+            ),
+            patch.object(
+                TerminalFragmentExtractor, "_split_caps_by_adjacency",
+                return_value=(_CAP_LEFT, _CAP_RIGHT),
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {})] * 4,
+            ),
+        ):
+            result = TerminalFragmentExtractor().extract(pt)
+        assert len(result) == 4
+
+    def test_left_terminal_context_includes_left_cap(self):
+        pt = _make_parameterised_trimer()
+        with (
+            patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
+            patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
+            patch.object(
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _CAP_LEFT | _CAP_RIGHT],
+            ),
+            patch.object(
+                TerminalFragmentExtractor, "_split_caps_by_adjacency",
+                return_value=(_CAP_LEFT, _CAP_RIGHT),
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {})] * 4,
+            ) as mock_extract,
+        ):
+            TerminalFragmentExtractor().extract(pt)
+        left_ctx = mock_extract.call_args_list[0].kwargs["context_parmed_indices"]
+        assert _CAP_LEFT.issubset(left_ctx)
+        assert not _CAP_RIGHT.issubset(left_ctx)
+
+    def test_right_terminal_context_includes_right_cap(self):
+        pt = _make_parameterised_trimer()
+        with (
+            patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
+            patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
+            patch.object(
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _CAP_LEFT | _CAP_RIGHT],
+            ),
+            patch.object(
+                TerminalFragmentExtractor, "_split_caps_by_adjacency",
+                return_value=(_CAP_LEFT, _CAP_RIGHT),
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {})] * 4,
+            ) as mock_extract,
+        ):
+            TerminalFragmentExtractor().extract(pt)
+        right_ctx = mock_extract.call_args_list[1].kwargs["context_parmed_indices"]
+        assert _CAP_RIGHT.issubset(right_ctx)
+        assert not _CAP_LEFT.issubset(right_ctx)
+
+    def test_cap_fragments_have_cap_as_region(self):
+        pt = _make_parameterised_trimer()
+        with (
+            patch.object(StructureMolDeriver, "derive", return_value=MagicMock()),
+            patch.object(CoordinateCrosswalk, "map_mol3d_to_parmed", return_value={}),
+            patch.object(
+                RegionFragmentExtractor, "resolve_parmed_indices",
+                side_effect=[_LEFT, _CENTRAL, _RIGHT, _CAP_LEFT | _CAP_RIGHT],
+            ),
+            patch.object(
+                TerminalFragmentExtractor, "_split_caps_by_adjacency",
+                return_value=(_CAP_LEFT, _CAP_RIGHT),
+            ),
+            patch.object(
+                RegionFragmentExtractor, "extract",
+                side_effect=[(MagicMock(), {})] * 4,
+            ) as mock_extract,
+        ):
+            TerminalFragmentExtractor().extract(pt)
+        cap_regions = [
+            call.kwargs["region_parmed_indices"]
+            for call in mock_extract.call_args_list[2:]
+        ]
+        assert _CAP_LEFT in cap_regions
+        assert _CAP_RIGHT in cap_regions

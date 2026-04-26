@@ -353,15 +353,11 @@ class TestReadDihedralParameterWithDihedralTypeList:
 
     def _make_mock_dihedral_with_type_list(self, phi_k: float, phase: float, per: float) -> pmd.Dihedral:
         from unittest.mock import MagicMock
+        from parmed.topologyobjects import DihedralType, DihedralTypeList
+        dtype_list = DihedralTypeList()
+        dtype_list.append(DihedralType(phi_k=phi_k, phase=phase, per=per))
         dihedral = MagicMock()
-        first_term = MagicMock()
-        first_term.phi_k = phi_k
-        first_term.phase = phase
-        first_term.per = per
-        type_list = MagicMock()
-        del type_list.phi_k
-        type_list.__getitem__ = MagicMock(return_value=first_term)
-        dihedral.type = type_list
+        dihedral.type = dtype_list
         return dihedral
 
     def test_single_type_returns_phi_k(self):

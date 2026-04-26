@@ -95,6 +95,15 @@ class PolymerParameterisationTiler:
             for parameter in AtomParameter:
                 key = ((atom.idx,), parameter)
                 values = assignments.get(key, [])
+                if not values and atom.idx not in context.polymer_atom_metadata:
+                    logger.warning(
+                        "Atom %d (%s) has no library match and no residue metadata; "
+                        "keeping default value for %s.",
+                        atom.idx,
+                        atom.name,
+                        parameter,
+                    )
+                    continue
                 value = self._resolve_or_missing((atom.idx,), parameter, values, context)
                 self._set_atom_param(atom, parameter, value)
             if atom.idx in gaff2_types:
