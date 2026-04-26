@@ -24,6 +24,7 @@ from polymer_md.parameterisation.fragments.data_models.parameters import (
     AtomParameter,
     BondParameter,
     DihedralParameter,
+    DihedralTerm,
 )
 from polymer_md.parameterisation.fragments.matching.resolution import (
     FirstStrategy,
@@ -31,6 +32,7 @@ from polymer_md.parameterisation.fragments.matching.resolution import (
     MeanStrategy,
 )
 from polymer_md.parameterisation.fragments.library import FragmentLibrary
+from polymer_md.parameterisation.fragments.migrate_v1_to_v2 import migrate_v1_to_v2
 
 
 # ---------------------------------------------------------------------------
@@ -382,3 +384,99 @@ class TestParameterRecordResolve:
         hit2 = ParameterHit(value=9.9, fragment=frag, match_instance=1, member_local_indices=(0,))
         record = ParameterRecord(global_indices=(0,), parameter=AtomParameter.CHARGE, hits=(hit1, hit2))
         assert pytest.approx(record.resolve(FirstStrategy()), abs=1e-9) == 1.5
+
+
+# ---------------------------------------------------------------------------
+# Tests: schema versioning and multi-term dihedral round-trip
+# ---------------------------------------------------------------------------
+
+class TestSchemaVersion:
+    def test_saved_file_contains_schema_version(self):
+        library = FragmentLibrary(records=(), atom_metadata={})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lib.json"
+            library.save(path)
+            data = json.loads(path.read_text())
+        assert data["schema_version"] == "2"
+
+    def test_load_rejects_unknown_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lib.json"
+            path.write_text(json.dumps({"schema_version": "99", "records": [], "atom_metadata": {}}))
+            with pytest.raises(ValueError, match="Unsupported"):
+                FragmentLibrary.load(path)
+
+    def test_load_rejects_v1_without_schema_version_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lib.json"
+            path.write_text(json.dumps({"records": [], "atom_metadata": {}}))
+            with pytest.raises(ValueError, match="Unsupported"):
+                FragmentLibrary.load(path)
+
+
+class TestMultiTermDihedralRoundTrip:
+    def test_multi_term_dihedral_survives_save_load(self):
+        frag = Fragment(pattern=_PATTERN2)
+        terms = (
+            DihedralTerm(force_constant=1.0, phase=0.0, periodicity=1.0),
+            DihedralTerm(force_constant=0.5, phase=3.14, periodicity=3.0),
+        )
+        hit = ParameterHit(value=terms, fragment=frag, match_instance=0, member_local_indices=(0, 1, 2, 3))
+        record = ParameterRecord(global_indices=(0, 1, 2, 3), parameter=DihedralParameter.FORCE_CONSTANT, hits=(hit,))
+        library = FragmentLibrary(records=(record,), atom_metadata={})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lib.json"
+            library.save(path)
+            loaded = FragmentLibrary.load(path)
+        dihedral_records = [r for r in loaded.records if r.parameter == DihedralParameter.FORCE_CONSTANT]
+        assert len(dihedral_records) == 1
+        loaded_value = dihedral_records[0].hits[0].value
+        assert isinstance(loaded_value, tuple)
+        assert len(loaded_value) == 2
+        assert pytest.approx(loaded_value[0].force_constant, abs=1e-9) == 1.0
+        assert pytest.approx(loaded_value[1].force_constant, abs=1e-9) == 0.5
+        assert pytest.approx(loaded_value[1].phase, abs=1e-3) == 3.14
+
+    def test_serialised_dihedral_uses_terms_key(self):
+        frag = Fragment(pattern=_PATTERN2)
+        terms = (DihedralTerm(force_constant=2.0, phase=0.0, periodicity=2.0),)
+        hit = ParameterHit(value=terms, fragment=frag, match_instance=0, member_local_indices=(0, 1, 2, 3))
+        record = ParameterRecord(global_indices=(0, 1, 2, 3), parameter=DihedralParameter.FORCE_CONSTANT, hits=(hit,))
+        library = FragmentLibrary(records=(record,), atom_metadata={})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lib.json"
+            library.save(path)
+            data = json.loads(path.read_text())
+        hit_data = data["records"][0]["hits"][0]
+        assert "terms" in hit_data["value"]
+        assert hit_data["value"]["terms"] == [[2.0, 0.0, 2.0]]
+
+
+class TestMigrateV1ToV2:
+    def test_removes_dihedral_records(self):
+        v1_data = {
+            "records": [
+                {"global_indices": [0, 1], "parameter_kind": "bond", "parameter_name": "FORCE_CONSTANT", "hits": []},
+                {"global_indices": [0, 1, 2, 3], "parameter_kind": "dihedral", "parameter_name": "FORCE_CONSTANT", "hits": []},
+                {"global_indices": [0, 1, 2, 3], "parameter_kind": "dihedral", "parameter_name": "PHASE", "hits": []},
+            ],
+            "atom_metadata": {},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lib.json"
+            path.write_text(json.dumps(v1_data))
+            migrate_v1_to_v2(path)
+            loaded = FragmentLibrary.load(path)
+        dihedral_records = [r for r in loaded.records if isinstance(r.parameter, DihedralParameter)]
+        assert len(dihedral_records) == 0
+        bond_records = [r for r in loaded.records if r.parameter == BondParameter.FORCE_CONSTANT]
+        assert len(bond_records) == 1
+
+    def test_idempotent_on_v2(self):
+        library = FragmentLibrary(records=(), atom_metadata={})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lib.json"
+            library.save(path)
+            migrate_v1_to_v2(path)
+            loaded = FragmentLibrary.load(path)
+        assert len(loaded.records) == 0

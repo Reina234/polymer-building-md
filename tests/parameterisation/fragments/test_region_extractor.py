@@ -277,7 +277,7 @@ class TestExtractDihedralMembers:
         )
         assert len(fragment.annotated_dihedrals) > 0
 
-    def test_dihedral_parameters_cover_all_params(self, butane_mol, butane_structure):
+    def test_one_annotated_dihedral_per_quadruple(self, butane_mol, butane_structure):
         region = frozenset(
             i for i in range(butane_mol.GetNumAtoms())
             if butane_mol.GetAtomWithIdx(i).GetAtomicNum() != 1
@@ -289,9 +289,9 @@ class TestExtractDihedralMembers:
             context_parmed_indices=context,
             region_parmed_indices=region,
         )
-        dihedral_params = {m.parameter for m in fragment.annotated_dihedrals}
-        for param in DihedralParameter:
-            assert param in dihedral_params
+        local_index_sets = {m.local_indices for m in fragment.annotated_dihedrals}
+        assert len(fragment.annotated_dihedrals) == len(local_index_sets)
+        assert all(m.parameter == DihedralParameter.FORCE_CONSTANT for m in fragment.annotated_dihedrals)
 
     def test_no_duplicate_dihedrals(self, butane_mol, butane_structure):
         context = frozenset(range(butane_mol.GetNumAtoms()))
@@ -468,7 +468,7 @@ class TestExtractDihedralMembersDirectly:
         global_to_local = {0: 0, 1: 1, 2: 2, 3: 3}
         members = extractor._extract_dihedral_members(mock_structure, region, global_to_local)
 
-        assert len(members) == len(list(DihedralParameter))
+        assert len(members) == 1
 
     def test_only_improper_dihedrals_gives_no_members(self):
         extractor = RegionFragmentExtractor()
@@ -492,7 +492,7 @@ class TestExtractDihedralMembersDirectly:
         global_to_local = {0: 0, 1: 1, 2: 2, 3: 3}
         members = extractor._extract_dihedral_members(mock_structure, region, global_to_local)
 
-        assert len(members) == len(list(DihedralParameter))
+        assert len(members) == 1
 
     def test_reversed_dihedral_treated_as_duplicate(self):
         extractor = RegionFragmentExtractor()
@@ -505,4 +505,4 @@ class TestExtractDihedralMembersDirectly:
         global_to_local = {0: 0, 1: 1, 2: 2, 3: 3}
         members = extractor._extract_dihedral_members(mock_structure, region, global_to_local)
 
-        assert len(members) == len(list(DihedralParameter))
+        assert len(members) == 1

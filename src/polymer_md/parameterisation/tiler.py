@@ -11,14 +11,19 @@ from polymer_md.parameterisation.fragments.data_models.annotated_members import 
     AnnotatedAtom,
     AnnotatedBond,
     AnnotatedDihedral,
+    AnnotatedImproper,
     AnnotatedMember,
 )
+from parmed.topologyobjects import DihedralTypeList
+
 from polymer_md.parameterisation.fragments.data_models.parameters import (
     AngleParameter,
     AtomParameter,
     BondParameter,
     DihedralParameter,
+    DihedralTerm,
     ForceFieldParameter,
+    ImproperParameter,
 )
 from polymer_md.parameterisation.fragments.library import FragmentLibrary
 from polymer_md.parameterisation.fragments.matching.resolution import MeanStrategy
@@ -27,6 +32,12 @@ from polymer_md.parameterisation.strategies.base import MissingParameterError, M
 from polymer_md.parameterisation.strategies.strict import StrictMissingParameterStrategy
 
 logger = logging.getLogger(__name__)
+
+
+class DihedralResolutionStrategy:
+    @staticmethod
+    def resolve(values: list[tuple[DihedralTerm, ...]]) -> tuple[DihedralTerm, ...]:
+        return values[0]
 
 
 @dataclass
@@ -52,6 +63,7 @@ class PolymerParameterisationTiler:
         self._apply_bonds(structure, assignments, context)
         self._apply_angles(structure, assignments, context)
         self._apply_dihedrals(structure, assignments, context)
+        self._apply_impropers(structure, assignments, context)
         return structure
 
     def _collect_assignments(self, derived_mol: Chem.Mol) -> dict[tuple, list[float]]:
@@ -163,19 +175,59 @@ class PolymerParameterisationTiler:
             forward = (i, j, k, l)
             reverse = (l, k, j, i)
             canonical = min(forward, reverse)
-            phi_k = self._resolve_or_missing(
-                canonical, DihedralParameter.FORCE_CONSTANT,
-                assignments.get((canonical, DihedralParameter.FORCE_CONSTANT), []), context
+            terms = self._resolve_dihedral_terms(canonical, assignments, context)
+            dihedral.type = self._build_dihedral_type(terms)
+
+    @staticmethod
+    def _build_dihedral_type(terms: tuple[DihedralTerm, ...]) -> DihedralTypeList | pmd.DihedralType:
+        if len(terms) == 1:
+            t = terms[0]
+            return pmd.DihedralType(phi_k=t.force_constant, phase=t.phase, per=t.periodicity)
+        dtype_list = DihedralTypeList()
+        for term in terms:
+            dtype_list.append(pmd.DihedralType(phi_k=term.force_constant, phase=term.phase, per=term.periodicity))
+        return dtype_list
+
+    def _apply_impropers(
+        self,
+        structure: pmd.Structure,
+        assignments: dict,
+        context: StrategyContext,
+    ) -> None:
+        for dihedral in structure.dihedrals:
+            if not dihedral.improper:
+                continue
+            i, j, k, l = (
+                dihedral.atom1.idx, dihedral.atom2.idx,
+                dihedral.atom3.idx, dihedral.atom4.idx,
             )
-            phase = self._resolve_or_missing(
-                canonical, DihedralParameter.PHASE,
-                assignments.get((canonical, DihedralParameter.PHASE), []), context
-            )
-            per = self._resolve_or_missing(
-                canonical, DihedralParameter.PERIODICITY,
-                assignments.get((canonical, DihedralParameter.PERIODICITY), []), context
-            )
-            dihedral.type = pmd.DihedralType(phi_k=phi_k, phase=phase, per=per)
+            canonical = (i, j, k, l)
+            values: list[tuple[DihedralTerm, ...]] = [
+                v for v in assignments.get((canonical, ImproperParameter.FORCE_CONSTANT), [])
+                if isinstance(v, tuple)
+            ]
+            if not values:
+                continue
+            terms = DihedralResolutionStrategy.resolve(values)
+            dihedral.type = self._build_dihedral_type(terms)
+
+    def _resolve_dihedral_terms(
+        self,
+        canonical: tuple[int, ...],
+        assignments: dict,
+        context: StrategyContext,
+    ) -> tuple[DihedralTerm, ...]:
+        values: list[tuple[DihedralTerm, ...]] = [
+            v for v in assignments.get((canonical, DihedralParameter.FORCE_CONSTANT), [])
+            if isinstance(v, tuple)
+        ]
+        if values:
+            return DihedralResolutionStrategy.resolve(values)
+        strategy = self.missing_strategies.get(type(DihedralParameter.FORCE_CONSTANT), StrictMissingParameterStrategy())
+        result = strategy.resolve(canonical, DihedralParameter.FORCE_CONSTANT, context)
+        if isinstance(result, tuple):
+            return result
+        return (DihedralTerm(force_constant=float(result), phase=0.0, periodicity=1.0),)
 
     def _resolve_or_missing(
         self,

@@ -95,14 +95,25 @@ class PolymerParameterisationPipeline:
         for instance in polymer.residue_instances:
             if instance.residue_type == ResidueType.CAP:
                 continue
-            residue_id = instance.residue_id
-            heavy_indices = frozenset(
-                idx for idx in instance.atom_indices(polymer.mol)
-                if polymer.mol.GetAtomWithIdx(idx).GetAtomicNum() != 1
-            )
-            for position, idx in enumerate(sorted(heavy_indices)):
-                metadata[idx] = (residue_id, position)
+            PolymerParameterisationPipeline._add_instance_metadata(polymer, instance, metadata)
         return metadata
+
+    @staticmethod
+    def _add_instance_metadata(
+        polymer: Polymer,
+        instance,
+        metadata: dict[int, tuple[str, int]],
+    ) -> None:
+        heavy_indices = PolymerParameterisationPipeline._heavy_atom_indices(polymer, instance)
+        for position, idx in enumerate(sorted(heavy_indices)):
+            metadata[idx] = (instance.residue_id, position)
+
+    @staticmethod
+    def _heavy_atom_indices(polymer: Polymer, instance) -> frozenset[int]:
+        return frozenset(
+            idx for idx in instance.atom_indices(polymer.mol)
+            if polymer.mol.GetAtomWithIdx(idx).GetAtomicNum() != 1
+        )
 
     def _save_gromacs(self, structure: pmd.Structure) -> GromacsFiles:
         name = f"polymer_{self.n}mer"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Union
 
@@ -27,4 +28,15 @@ class AtomParameter(Enum):
     MASS = auto()
 
 
-ForceFieldParameter = Union[BondParameter, AngleParameter, DihedralParameter, AtomParameter]
+class ImproperParameter(Enum):
+    FORCE_CONSTANT = auto()
+
+
+ForceFieldParameter = Union[BondParameter, AngleParameter, DihedralParameter, ImproperParameter, AtomParameter]
+
+
+@dataclass(frozen=True)
+class DihedralTerm:
+    force_constant: float
+    phase: float
+    periodicity: float

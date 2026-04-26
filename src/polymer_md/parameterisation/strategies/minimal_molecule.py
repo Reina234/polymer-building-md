@@ -13,11 +13,16 @@ from polymer_md.conversion.gromacs_files import GromacsFiles
 from polymer_md.conversion.obabel import OBabelConverter
 from polymer_md.geometry.base import ConformerGenerator
 from polymer_md.geometry.etkdg import ETKDGConformerGenerator
+from polymer_md.parameterisation.strategies.minimal_mol_expander import (
+    GAFFMinimalMoleculeExpander,
+    MinimalMoleculeExpander,
+)
 from polymer_md.parameterisation.fragments.data_models.parameters import (
     AngleParameter,
     AtomParameter,
     BondParameter,
     DihedralParameter,
+    DihedralTerm,
     ForceFieldParameter,
 )
 from polymer_md.parameterisation.strategies.base import (
@@ -30,32 +35,28 @@ from polymer_md.utils.rdkit_helper import RDKitHelper
 
 @dataclass
 class MinimalMoleculeStrategy:
-    """Parameterises a minimal molecule extracted from the polymer context.
-
-    Intended for bond, angle, and dihedral parameters that are absent from the
-    library. The strategy cuts out the atoms defining the missing term plus their
-    immediate neighbours, caps dangling valences with implicit H, runs the tiny
-    fragment through OBabel + acpype, and reads the specific parameter back out.
-    """
-
     conformer_generator: ConformerGenerator = field(
         default_factory=ETKDGConformerGenerator
     )
     charge_method: str = "bcc"
+    expander: MinimalMoleculeExpander = field(
+        default_factory=GAFFMinimalMoleculeExpander
+    )
 
     def resolve(
         self,
         global_indices: tuple[int, ...],
         parameter: ForceFieldParameter,
         context: StrategyContext,
-    ) -> float:
+    ) -> float | tuple[DihedralTerm, ...]:
         if isinstance(parameter, AtomParameter):
             raise MissingParameterError(
                 f"MinimalMoleculeStrategy handles bond/angle/dihedral parameters, "
                 f"not {type(parameter).__name__}. "
                 f"Use ResiduePositionStrategy or NeighbourhoodSMARTSStrategy for atom parameters."
             )
-        mol, old_to_new = self._extract_minimal_mol(context.derived_mol, global_indices)
+        expanded_indices = self.expander.expand(context.derived_mol, frozenset(global_indices))
+        mol, old_to_new = self._extract_minimal_mol(context.derived_mol, expanded_indices)
         with tempfile.TemporaryDirectory() as tmp:
             structure = self._parameterise(mol, Path(tmp))
         local_indices = tuple(old_to_new[i] for i in global_indices)
@@ -64,14 +65,9 @@ class MinimalMoleculeStrategy:
     @staticmethod
     def _extract_minimal_mol(
         derived_mol: Chem.Mol,
-        global_indices: tuple[int, ...],
+        expanded_atom_indices: frozenset[int],
     ) -> tuple[Chem.Mol, dict[int, int]]:
-        atom_set = set(global_indices)
-        for idx in global_indices:
-            for nbr in derived_mol.GetAtomWithIdx(idx).GetNeighbors():
-                atom_set.add(nbr.GetIdx())
-
-        sorted_atoms = sorted(atom_set)
+        sorted_atoms = sorted(expanded_atom_indices)
         old_to_new: dict[int, int] = {old: new for new, old in enumerate(sorted_atoms)}
 
         rw = Chem.RWMol()
@@ -82,7 +78,7 @@ class MinimalMoleculeStrategy:
         for bond in derived_mol.GetBonds():
             i = bond.GetBeginAtomIdx()
             j = bond.GetEndAtomIdx()
-            if i in atom_set and j in atom_set:
+            if i in expanded_atom_indices and j in expanded_atom_indices:
                 rw.AddBond(old_to_new[i], old_to_new[j], bond.GetBondType())
 
         Chem.SanitizeMol(rw)
@@ -112,19 +108,13 @@ class MinimalMoleculeStrategy:
         structure: pmd.Structure,
         local_indices: tuple[int, ...],
         parameter: ForceFieldParameter,
-    ) -> float:
+    ) -> float | tuple[DihedralTerm, ...]:
         if isinstance(parameter, BondParameter):
-            return MinimalMoleculeStrategy._bond_value(
-                structure, local_indices, parameter
-            )
+            return MinimalMoleculeStrategy._bond_value(structure, local_indices, parameter)
         if isinstance(parameter, AngleParameter):
-            return MinimalMoleculeStrategy._angle_value(
-                structure, local_indices, parameter
-            )
+            return MinimalMoleculeStrategy._angle_value(structure, local_indices, parameter)
         if isinstance(parameter, DihedralParameter):
-            return MinimalMoleculeStrategy._dihedral_value(
-                structure, local_indices, parameter
-            )
+            return MinimalMoleculeStrategy._dihedral_terms(structure, local_indices)
         raise MissingParameterError(
             f"Unsupported parameter type: {type(parameter).__name__}"
         )
@@ -154,10 +144,7 @@ class MinimalMoleculeStrategy:
     ) -> float:
         index_set = frozenset(atom_indices)
         for angle in structure.angles:
-            if (
-                frozenset({angle.atom1.idx, angle.atom2.idx, angle.atom3.idx})
-                == index_set
-            ):
+            if frozenset({angle.atom1.idx, angle.atom2.idx, angle.atom3.idx}) == index_set:
                 angle_type = ParmedTypeResolver.angle_type(angle)
                 if parameter == AngleParameter.FORCE_CONSTANT:
                     return float(angle_type.k)
@@ -167,30 +154,29 @@ class MinimalMoleculeStrategy:
         )
 
     @staticmethod
-    def _dihedral_value(
+    def _dihedral_terms(
         structure: pmd.Structure,
         atom_indices: tuple[int, ...],
-        parameter: DihedralParameter,
-    ) -> float:
+    ) -> tuple[DihedralTerm, ...]:
         index_set = frozenset(atom_indices)
         for dihedral in structure.dihedrals:
             if dihedral.improper:
                 continue
-            indices = frozenset(
-                {
-                    dihedral.atom1.idx,
-                    dihedral.atom2.idx,
-                    dihedral.atom3.idx,
-                    dihedral.atom4.idx,
-                }
-            )
+            indices = frozenset({
+                dihedral.atom1.idx,
+                dihedral.atom2.idx,
+                dihedral.atom3.idx,
+                dihedral.atom4.idx,
+            })
             if indices == index_set:
-                dihedral_type = ParmedTypeResolver.dihedral_type(dihedral)
-                if parameter == DihedralParameter.FORCE_CONSTANT:
-                    return float(dihedral_type.phi_k)
-                if parameter == DihedralParameter.PHASE:
-                    return float(dihedral_type.phase)
-                return float(dihedral_type.per)
+                return tuple(
+                    DihedralTerm(
+                        force_constant=float(t.phi_k),
+                        phase=float(t.phase),
+                        periodicity=float(t.per),
+                    )
+                    for t in ParmedTypeResolver.dihedral_types(dihedral)
+                )
         raise MissingParameterError(
             f"Dihedral not found for atoms {atom_indices} in minimal structure"
         )

@@ -72,13 +72,17 @@ class ParmedTypeResolver:
         return angle.type
 
     @staticmethod
-    def dihedral_type(dihedral: pmd.Dihedral) -> pmd.DihedralType:
+    def dihedral_types(dihedral: pmd.Dihedral) -> list[pmd.DihedralType]:
         dtype = dihedral.type
-        if isinstance(dtype, DihedralTypeList):
-            return dtype[0]
         if dtype is None:
             raise ValueError(
                 f"Dihedral among atoms {dihedral.atom1.idx}, {dihedral.atom2.idx}, "
                 f"{dihedral.atom3.idx}, {dihedral.atom4.idx} has no type assigned"
             )
-        return dtype
+        if isinstance(dtype, DihedralTypeList):
+            return list(dtype)
+        return [dtype]
+
+    @staticmethod
+    def dihedral_type(dihedral: pmd.Dihedral) -> pmd.DihedralType:
+        return ParmedTypeResolver.dihedral_types(dihedral)[0]

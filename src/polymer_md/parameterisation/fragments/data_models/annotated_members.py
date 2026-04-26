@@ -8,6 +8,7 @@ from polymer_md.parameterisation.fragments.data_models.parameters import (
     AtomParameter,
     BondParameter,
     DihedralParameter,
+    ImproperParameter,
 )
 
 
@@ -30,9 +31,15 @@ class AnnotatedDihedral:
 
 
 @dataclass(frozen=True)
+class AnnotatedImproper:
+    local_indices: tuple[int, int, int, int]
+    parameter: ImproperParameter
+
+
+@dataclass(frozen=True)
 class AnnotatedAtom:
     local_index: int
     parameter: AtomParameter
 
 
-AnnotatedMember = Union[AnnotatedBond, AnnotatedAngle, AnnotatedDihedral, AnnotatedAtom]
+AnnotatedMember = Union[AnnotatedBond, AnnotatedAngle, AnnotatedDihedral, AnnotatedImproper, AnnotatedAtom]

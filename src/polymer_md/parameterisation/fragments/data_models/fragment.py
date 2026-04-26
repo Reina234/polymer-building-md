@@ -7,6 +7,7 @@ from polymer_md.parameterisation.fragments.data_models.annotated_members import 
     AnnotatedBond,
     AnnotatedAngle,
     AnnotatedDihedral,
+    AnnotatedImproper,
     AnnotatedMember,
 )
 
@@ -17,6 +18,7 @@ class Fragment:
     annotated_bonds: tuple[AnnotatedBond, ...] = field(default_factory=tuple)
     annotated_angles: tuple[AnnotatedAngle, ...] = field(default_factory=tuple)
     annotated_dihedrals: tuple[AnnotatedDihedral, ...] = field(default_factory=tuple)
+    annotated_impropers: tuple[AnnotatedImproper, ...] = field(default_factory=tuple)
     annotated_atoms: tuple[AnnotatedAtom, ...] = field(default_factory=tuple)
 
     @property
@@ -25,5 +27,6 @@ class Fragment:
             *self.annotated_bonds,
             *self.annotated_angles,
             *self.annotated_dihedrals,
+            *self.annotated_impropers,
             *self.annotated_atoms,
         )

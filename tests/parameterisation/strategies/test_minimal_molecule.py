@@ -14,30 +14,39 @@ from polymer_md.parameterisation.fragments.data_models.parameters import (
     AtomParameter,
     BondParameter,
     DihedralParameter,
+    DihedralTerm,
 )
 from polymer_md.parameterisation.fragments.library import FragmentLibrary
 from polymer_md.parameterisation.strategies.base import MissingParameterError, StrategyContext
+from polymer_md.parameterisation.strategies.minimal_mol_expander import GAFFMinimalMoleculeExpander
 from polymer_md.parameterisation.strategies.minimal_molecule import MinimalMoleculeStrategy
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-@pytest.fixture
-def butane_mol() -> Chem.Mol:
-    mol = Chem.MolFromSmiles("CCCC")
+def _make_mol_with_h(smiles: str) -> Chem.Mol:
+    mol = Chem.MolFromSmiles(smiles)
     mol = Chem.AddHs(mol)
     AllChem.EmbedMolecule(mol, AllChem.ETKDGv3())
     return mol
+
+
+@pytest.fixture
+def butane_mol() -> Chem.Mol:
+    return _make_mol_with_h("CCCC")
 
 
 @pytest.fixture
 def propane_mol() -> Chem.Mol:
-    mol = Chem.MolFromSmiles("CCC")
-    mol = Chem.AddHs(mol)
-    AllChem.EmbedMolecule(mol, AllChem.ETKDGv3())
-    return mol
+    return _make_mol_with_h("CCC")
+
+
+@pytest.fixture
+def benzene_mol() -> Chem.Mol:
+    return _make_mol_with_h("c1ccccc1")
+
+
+@pytest.fixture
+def naphthalene_mol() -> Chem.Mol:
+    return _make_mol_with_h("c1ccc2ccccc2c1")
 
 
 def _empty_library() -> FragmentLibrary:
@@ -49,6 +58,13 @@ def _minimal_context(mol: Chem.Mol) -> StrategyContext:
         library=_empty_library(),
         derived_mol=mol,
         polymer_atom_metadata={},
+    )
+
+
+def _heavy_atom_indices(mol: Chem.Mol) -> frozenset[int]:
+    return frozenset(
+        i for i in range(mol.GetNumAtoms())
+        if mol.GetAtomWithIdx(i).GetAtomicNum() != 1
     )
 
 
@@ -91,9 +107,116 @@ def _make_structure_with_dihedral(
     return structure
 
 
-# ---------------------------------------------------------------------------
-# Tests: raises for AtomParameter
-# ---------------------------------------------------------------------------
+class TestGAFFMinimalMoleculeExpander:
+    def test_sp3_only_adds_immediate_neighbors(self, propane_mol):
+        expander = GAFFMinimalMoleculeExpander()
+        result = expander.expand(propane_mol, frozenset({1}))
+        assert 1 in result
+        neighbors = {n.GetIdx() for n in propane_mol.GetAtomWithIdx(1).GetNeighbors()}
+        assert neighbors.issubset(result)
+
+    def test_sp3_does_not_add_non_adjacent_atoms(self, butane_mol):
+        expander = GAFFMinimalMoleculeExpander()
+        result = expander.expand(butane_mol, frozenset({1}))
+        assert len(result) < butane_mol.GetNumAtoms()
+
+    def test_ring_atom_expands_to_full_ring(self, benzene_mol):
+        expander = GAFFMinimalMoleculeExpander()
+        ring_atom_idx = next(
+            i for i in range(benzene_mol.GetNumAtoms())
+            if benzene_mol.GetAtomWithIdx(i).IsInRing()
+        )
+        result = expander.expand(benzene_mol, frozenset({ring_atom_idx}))
+        ring_atom_count = sum(
+            1 for i in range(benzene_mol.GetNumAtoms())
+            if benzene_mol.GetAtomWithIdx(i).IsInRing()
+            and benzene_mol.GetAtomWithIdx(i).GetAtomicNum() == 6
+        )
+        ring_atoms_in_result = sum(
+            1 for i in result
+            if benzene_mol.GetAtomWithIdx(i).IsInRing()
+        )
+        assert ring_atoms_in_result >= ring_atom_count
+
+    def test_fused_rings_expands_to_both_rings(self, naphthalene_mol):
+        expander = GAFFMinimalMoleculeExpander()
+        ring_atom_idx = next(
+            i for i in range(naphthalene_mol.GetNumAtoms())
+            if naphthalene_mol.GetAtomWithIdx(i).IsInRing()
+        )
+        result = expander.expand(naphthalene_mol, frozenset({ring_atom_idx}))
+        ring_atom_count = sum(
+            1 for i in range(naphthalene_mol.GetNumAtoms())
+            if naphthalene_mol.GetAtomWithIdx(i).IsInRing()
+        )
+        ring_atoms_in_result = sum(1 for i in result if naphthalene_mol.GetAtomWithIdx(i).IsInRing())
+        assert ring_atoms_in_result >= ring_atom_count
+
+    def test_seed_always_in_result(self, propane_mol):
+        expander = GAFFMinimalMoleculeExpander()
+        result = expander.expand(propane_mol, frozenset({0, 2}))
+        assert 0 in result
+        assert 2 in result
+
+    def test_result_is_frozenset(self, propane_mol):
+        expander = GAFFMinimalMoleculeExpander()
+        result = expander.expand(propane_mol, frozenset({0}))
+        assert isinstance(result, frozenset)
+
+
+class TestExtractMinimalMol:
+    def test_builds_mol_from_given_atom_set(self, butane_mol):
+        atom_set = frozenset({0, 1, 2, 3})
+        mol, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(butane_mol, atom_set)
+        assert all(idx in old_to_new for idx in atom_set)
+
+    def test_old_to_new_maps_all_atoms_in_set(self, propane_mol):
+        atom_set = frozenset({0, 1})
+        mol, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(propane_mol, atom_set)
+        assert 0 in old_to_new
+        assert 1 in old_to_new
+
+    def test_output_mol_has_explicit_h(self, propane_mol):
+        atom_set = frozenset({0, 1})
+        mol, _ = MinimalMoleculeStrategy._extract_minimal_mol(propane_mol, atom_set)
+        h_count = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 1)
+        assert h_count > 0
+
+    def test_local_indices_contiguous_from_zero(self, butane_mol):
+        atom_set = frozenset({0, 1, 2, 3})
+        _, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(butane_mol, atom_set)
+        new_indices = sorted(old_to_new.values())
+        assert new_indices == list(range(len(new_indices)))
+
+    def test_bonds_preserved_within_extracted_set(self, butane_mol):
+        atom_set = frozenset({1, 2})
+        mol, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(butane_mol, atom_set)
+        bond_pairs = {
+            frozenset({b.GetBeginAtomIdx(), b.GetEndAtomIdx()})
+            for b in mol.GetBonds()
+        }
+        assert frozenset({old_to_new[1], old_to_new[2]}) in bond_pairs
+
+
+class TestMinimalMoleculeStrategyUsesExpander:
+    def test_expander_called_with_seed_indices(self, propane_mol):
+        mock_expander = MagicMock()
+        all_atoms = frozenset(range(propane_mol.GetNumAtoms()))
+        mock_expander.expand.return_value = all_atoms
+
+        structure = _make_structure_with_bond(0, 1, k=300.0, req=1.54)
+        strategy = MinimalMoleculeStrategy(expander=mock_expander)
+        context = _minimal_context(propane_mol)
+
+        with patch.object(strategy, "_parameterise", return_value=structure):
+            strategy.resolve((0, 1), BondParameter.FORCE_CONSTANT, context)
+
+        mock_expander.expand.assert_called_once_with(propane_mol, frozenset({0, 1}))
+
+    def test_default_expander_is_gaff(self):
+        strategy = MinimalMoleculeStrategy()
+        assert isinstance(strategy.expander, GAFFMinimalMoleculeExpander)
+
 
 class TestMinimalMoleculeStrategyRaisesForAtomParameter:
     def test_raises_for_charge(self, propane_mol):
@@ -108,59 +231,6 @@ class TestMinimalMoleculeStrategyRaisesForAtomParameter:
         with pytest.raises(MissingParameterError, match="AtomParameter"):
             strategy.resolve((0,), AtomParameter.EPSILON, context)
 
-
-# ---------------------------------------------------------------------------
-# Tests: _extract_minimal_mol
-# ---------------------------------------------------------------------------
-
-class TestExtractMinimalMol:
-    def test_includes_core_atoms_and_neighbours(self, butane_mol):
-        # butane heavy atoms: 0, 1, 2, 3 (C-C-C-C)
-        # For bond (1, 2), core atoms are 1 and 2; neighbours add 0 and 3
-        mol, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(butane_mol, (1, 2))
-
-        assert 1 in old_to_new
-        assert 2 in old_to_new
-        # Neighbours of 1 (C at index 1): C at 0 and C at 2 and some H
-        # Neighbours of 2 (C at index 2): C at 1 and C at 3 and some H
-        assert len(old_to_new) >= 4  # at minimum: 0, 1, 2, 3
-
-    def test_old_to_new_maps_core_atoms(self, propane_mol):
-        # heavy atom indices: 0, 1, 2
-        mol, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(propane_mol, (0, 1))
-        assert 0 in old_to_new
-        assert 1 in old_to_new
-
-    def test_output_mol_has_explicit_h(self, propane_mol):
-        mol, _ = MinimalMoleculeStrategy._extract_minimal_mol(propane_mol, (0, 1))
-        h_count = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 1)
-        assert h_count > 0
-
-    def test_local_indices_contiguous_from_zero(self, butane_mol):
-        _, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(butane_mol, (1, 2))
-        new_indices = sorted(old_to_new.values())
-        assert new_indices == list(range(len(new_indices)))
-
-    def test_bonds_preserved_within_extracted_set(self, butane_mol):
-        mol, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(butane_mol, (1, 2))
-        bond_pairs = {
-            frozenset({b.GetBeginAtomIdx(), b.GetEndAtomIdx()})
-            for b in mol.GetBonds()
-        }
-        new_1 = old_to_new[1]
-        new_2 = old_to_new[2]
-        assert frozenset({new_1, new_2}) in bond_pairs
-
-    def test_single_atom_extracts_with_neighbours(self, propane_mol):
-        # For a single atom, extract that atom + all its neighbours
-        mol, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(propane_mol, (1,))
-        assert 1 in old_to_new
-        assert len(old_to_new) > 1  # at least the middle C and its neighbours
-
-
-# ---------------------------------------------------------------------------
-# Tests: _bond_value
-# ---------------------------------------------------------------------------
 
 class TestBondValue:
     def test_returns_force_constant(self):
@@ -185,10 +255,6 @@ class TestBondValue:
             MinimalMoleculeStrategy._bond_value(structure, (0, 2), BondParameter.FORCE_CONSTANT)
 
 
-# ---------------------------------------------------------------------------
-# Tests: _angle_value
-# ---------------------------------------------------------------------------
-
 class TestAngleValue:
     def test_returns_force_constant(self):
         structure = _make_structure_with_angle(0, 1, 2, force_k=50.0, theteq=109.5)
@@ -206,51 +272,44 @@ class TestAngleValue:
             MinimalMoleculeStrategy._angle_value(structure, (0, 1, 3), AngleParameter.FORCE_CONSTANT)
 
 
-# ---------------------------------------------------------------------------
-# Tests: _dihedral_value
-# ---------------------------------------------------------------------------
-
 class TestDihedralValue:
-    def test_returns_force_constant(self):
+    def test_returns_all_terms(self):
         structure = _make_structure_with_dihedral(0, 1, 2, 3, phi_k=0.5, phase=0.0, per=3)
-        result = MinimalMoleculeStrategy._dihedral_value(
-            structure, (0, 1, 2, 3), DihedralParameter.FORCE_CONSTANT
-        )
-        assert pytest.approx(result, abs=1e-6) == 0.5
+        result = MinimalMoleculeStrategy._dihedral_terms(structure, (0, 1, 2, 3))
+        assert isinstance(result, tuple)
+        assert len(result) == 1
+        assert pytest.approx(result[0].force_constant, abs=1e-6) == 0.5
+        assert pytest.approx(result[0].phase, abs=1e-6) == 0.0
+        assert pytest.approx(result[0].periodicity, abs=1e-6) == 3.0
 
-    def test_returns_phase(self):
-        structure = _make_structure_with_dihedral(0, 1, 2, 3, phi_k=0.5, phase=1.57, per=3)
-        result = MinimalMoleculeStrategy._dihedral_value(
-            structure, (0, 1, 2, 3), DihedralParameter.PHASE
-        )
-        assert pytest.approx(result, abs=1e-4) == 1.57
-
-    def test_returns_periodicity(self):
-        structure = _make_structure_with_dihedral(0, 1, 2, 3, phi_k=0.5, phase=0.0, per=2)
-        result = MinimalMoleculeStrategy._dihedral_value(
-            structure, (0, 1, 2, 3), DihedralParameter.PERIODICITY
-        )
-        assert pytest.approx(result, abs=1e-6) == 2.0
+    def test_returns_multi_term_dihedral(self):
+        from parmed.topologyobjects import DihedralType, DihedralTypeList
+        structure = pmd.Structure()
+        atoms = [pmd.Atom() for _ in range(4)]
+        for atom in atoms:
+            structure.add_atom(atom, "MOL", 1)
+        dtype_list = DihedralTypeList()
+        dtype_list.append(DihedralType(phi_k=1.0, phase=0.0, per=1))
+        dtype_list.append(DihedralType(phi_k=0.5, phase=3.14, per=2))
+        dihedral = pmd.Dihedral(atoms[0], atoms[1], atoms[2], atoms[3])
+        dihedral.type = dtype_list
+        structure.dihedrals.append(dihedral)
+        result = MinimalMoleculeStrategy._dihedral_terms(structure, (0, 1, 2, 3))
+        assert len(result) == 2
+        assert isinstance(result[0], DihedralTerm)
+        assert pytest.approx(result[0].force_constant, abs=1e-6) == 1.0
+        assert pytest.approx(result[1].force_constant, abs=1e-6) == 0.5
 
     def test_skips_improper_dihedrals(self):
-        # Improper dihedral should be skipped; no proper dihedral → raises
         structure = _make_structure_with_dihedral(0, 1, 2, 3, phi_k=0.5, phase=0.0, per=3, improper=True)
         with pytest.raises(MissingParameterError, match="Dihedral not found"):
-            MinimalMoleculeStrategy._dihedral_value(
-                structure, (0, 1, 2, 3), DihedralParameter.FORCE_CONSTANT
-            )
+            MinimalMoleculeStrategy._dihedral_terms(structure, (0, 1, 2, 3))
 
     def test_raises_when_dihedral_not_found(self):
         structure = _make_structure_with_dihedral(0, 1, 2, 3, phi_k=0.5, phase=0.0, per=3)
         with pytest.raises(MissingParameterError, match="Dihedral not found"):
-            MinimalMoleculeStrategy._dihedral_value(
-                structure, (0, 1, 2, 9), DihedralParameter.FORCE_CONSTANT
-            )
+            MinimalMoleculeStrategy._dihedral_terms(structure, (0, 1, 2, 9))
 
-
-# ---------------------------------------------------------------------------
-# Tests: _read_parameter dispatch
-# ---------------------------------------------------------------------------
 
 class TestReadParameter:
     def test_dispatches_to_bond(self):
@@ -272,36 +331,32 @@ class TestReadParameter:
         result = MinimalMoleculeStrategy._read_parameter(
             structure, (0, 1, 2, 3), DihedralParameter.FORCE_CONSTANT
         )
-        assert pytest.approx(result, abs=1e-6) == 1.0
+        assert isinstance(result, tuple)
+        assert len(result) == 1
+        assert isinstance(result[0], DihedralTerm)
+        assert pytest.approx(result[0].force_constant, abs=1e-6) == 1.0
 
+    def test_atom_parameter_raises_missing_error(self):
+        structure = _make_structure_with_bond(0, 1, k=1.0, req=1.0)
+        with pytest.raises(MissingParameterError, match="Unsupported"):
+            MinimalMoleculeStrategy._read_parameter(structure, (0,), AtomParameter.CHARGE)
 
-# ---------------------------------------------------------------------------
-# Tests: resolve (mocked _parameterise)
-# ---------------------------------------------------------------------------
 
 class TestResolveWithMockedParameterisation:
     def test_resolve_bond_parameter(self, propane_mol):
         structure = _make_structure_with_bond(0, 1, k=300.0, req=1.54)
-
         strategy = MinimalMoleculeStrategy()
         context = _minimal_context(propane_mol)
 
         with patch.object(strategy, "_parameterise", return_value=structure):
-            # heavy atoms in propane: 0=C, 1=C, 2=C
-            # For bond (0, 1): extract 0, 1, their neighbours → indices map 0→0, 1→1 (plus H)
-            # local_indices = (old_to_new[0], old_to_new[1]) = (0, 1) if 0,1 are first sorted
             result = strategy.resolve((0, 1), BondParameter.FORCE_CONSTANT, context)
 
         assert pytest.approx(result, abs=1e-6) == 300.0
 
     def test_resolve_angle_parameter(self, propane_mol):
-        # In propane (CCC + H): angle 0-1-2
-        # Extract atoms (0,1,2) + neighbours
-        # old_to_new: depends on sorted(atom_set)
-        # atom_set for angle (0,1,2): {0,1,2} + neighbours of 0,1,2
-        # neighbours of 0: [1, H...]; neighbours of 1: [0, 2, H...]; neighbours of 2: [1, H...]
-        # heavy atom_set heavy from propane_mol: 0,1,2 + all Hs → old_to_new[0]=0, [1]=1, [2]=2 (Hs start at 3)
-        mol, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(propane_mol, (0, 1, 2))
+        expander = GAFFMinimalMoleculeExpander()
+        all_atoms = expander.expand(propane_mol, frozenset({0, 1, 2}))
+        mol, old_to_new = MinimalMoleculeStrategy._extract_minimal_mol(propane_mol, all_atoms)
         local = tuple(old_to_new[i] for i in (0, 1, 2))
         structure = _make_structure_with_angle(local[0], local[1], local[2], force_k=50.0, theteq=109.5)
 
@@ -320,23 +375,13 @@ class TestResolveWithMockedParameterisation:
             strategy.resolve((0,), AtomParameter.MASS, context)
 
 
-class TestReadParameterEdgeCases:
-    def test_atom_parameter_raises_missing_error(self):
-        # _read_parameter is static; calling it directly with AtomParameter triggers
-        # the final fallthrough guard (unreachable from resolve but testable directly)
-        structure = _make_structure_with_bond(0, 1, k=1.0, req=1.0)
-        with pytest.raises(MissingParameterError, match="Unsupported"):
-            MinimalMoleculeStrategy._read_parameter(structure, (0,), AtomParameter.CHARGE)
-
-
 class TestParameteriseMethod:
     def test_parameterise_calls_conformer_obabel_acpype(self, propane_mol):
-        from unittest.mock import MagicMock, patch
-
         mock_structure = pmd.Structure()
         mock_structure.add_atom(pmd.Atom(), "MOL", 1)
 
-        mol, _ = MinimalMoleculeStrategy._extract_minimal_mol(propane_mol, (0, 1))
+        all_atoms = frozenset(range(propane_mol.GetNumAtoms()))
+        mol, _ = MinimalMoleculeStrategy._extract_minimal_mol(propane_mol, all_atoms)
 
         mock_conformer = MagicMock()
         mock_conformer.embed.return_value = mol

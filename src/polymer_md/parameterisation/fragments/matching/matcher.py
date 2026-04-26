@@ -9,6 +9,7 @@ from polymer_md.parameterisation.fragments.data_models.annotated_members import 
     AnnotatedAtom,
     AnnotatedBond,
     AnnotatedDihedral,
+    AnnotatedImproper,
     AnnotatedMember,
 )
 from polymer_md.parameterisation.fragments.data_models.fragment import Fragment
@@ -16,12 +17,13 @@ from polymer_md.parameterisation.fragments.data_models.match import (
     FragmentMatch,
     ParameterHit,
     ParameterRecord,
+    ParameterValue,
 )
 from polymer_md.parameterisation.fragments.data_models.parameters import (
     AngleParameter,
     AtomParameter,
     BondParameter,
-    DihedralParameter,
+    DihedralTerm,
     ForceFieldParameter,
 )
 
@@ -94,20 +96,22 @@ class FragmentMatcher:
     def _local_indices_of(member: AnnotatedMember) -> tuple[int, ...]:
         if isinstance(member, AnnotatedAtom):
             return (member.local_index,)
-        return member.local_indices
+        return member.local_indices  # type: ignore[return-value]
 
     @staticmethod
     def _extract_value(
         structure: pmd.Structure,
         global_indices: tuple[int, ...],
         member: AnnotatedMember,
-    ) -> float:
+    ) -> ParameterValue:
         if isinstance(member, AnnotatedBond):
             return FragmentMatcher._bond_value(structure, global_indices, member.parameter)
         if isinstance(member, AnnotatedAngle):
             return FragmentMatcher._angle_value(structure, global_indices, member.parameter)
         if isinstance(member, AnnotatedDihedral):
-            return FragmentMatcher._dihedral_value(structure, global_indices, member.parameter)
+            return FragmentMatcher._dihedral_terms(structure, global_indices, improper=False)
+        if isinstance(member, AnnotatedImproper):
+            return FragmentMatcher._dihedral_terms(structure, global_indices, improper=True)
         return FragmentMatcher._atom_value(structure, global_indices[0], member.parameter)
 
     @staticmethod
@@ -153,29 +157,30 @@ class FragmentMatcher:
         raise ValueError(f"Unknown angle parameter: {parameter}")  # pragma: no cover
 
     @staticmethod
-    def _dihedral_value(
+    def _dihedral_terms(
         structure: pmd.Structure,
         atom_indices: tuple[int, ...],
-        parameter: DihedralParameter,
-    ) -> float:
+        improper: bool = False,
+    ) -> tuple[DihedralTerm, ...]:
         index_set = frozenset(atom_indices)
         for dihedral in structure.dihedrals:
-            indices = {dihedral.atom1.idx, dihedral.atom2.idx,
-                       dihedral.atom3.idx, dihedral.atom4.idx}
-            if frozenset(indices) == index_set:
-                return FragmentMatcher._read_dihedral_parameter(dihedral, parameter)
-        raise ValueError(f"Dihedral not found for atoms {atom_indices}")
-
-    @staticmethod
-    def _read_dihedral_parameter(dihedral: pmd.Dihedral, parameter: DihedralParameter) -> float:
-        dihedral_type = ParmedTypeResolver.dihedral_type(dihedral)
-        if parameter == DihedralParameter.FORCE_CONSTANT:
-            return float(dihedral_type.phi_k)
-        if parameter == DihedralParameter.PHASE:
-            return float(dihedral_type.phase)
-        if parameter == DihedralParameter.PERIODICITY:
-            return float(dihedral_type.per)
-        raise ValueError(f"Unknown dihedral parameter: {parameter}")  # pragma: no cover
+            if dihedral.improper != improper:
+                continue
+            indices = frozenset({
+                dihedral.atom1.idx, dihedral.atom2.idx,
+                dihedral.atom3.idx, dihedral.atom4.idx,
+            })
+            if indices == index_set:
+                return tuple(
+                    DihedralTerm(
+                        force_constant=float(t.phi_k),
+                        phase=float(t.phase),
+                        periodicity=float(t.per),
+                    )
+                    for t in ParmedTypeResolver.dihedral_types(dihedral)
+                )
+        kind = "improper" if improper else "proper"
+        raise ValueError(f"{kind.capitalize()} dihedral not found for atoms {atom_indices}")
 
     @staticmethod
     def _atom_value(

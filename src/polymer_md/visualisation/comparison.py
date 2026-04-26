@@ -7,25 +7,36 @@ import numpy as np
 
 from polymer_md.analysis.results import ComparisonResult
 from polymer_md.parameterisation.fragments.data_models.fragment import Fragment
-from polymer_md.parameterisation.fragments.data_models.parameters import ForceFieldParameter
+from polymer_md.parameterisation.fragments.data_models.parameters import (
+    AngleParameter,
+    AtomParameter,
+    BondParameter,
+    DihedralParameter,
+    ForceFieldParameter,
+)
 from polymer_md.visualisation._palette import COMPARISON_PALETTE, clean_ax
 
 _MAX_COLS = 3
+_EMPTY_FIGURE_SIZE = (6, 3)
+_CELL_WIDTH = 5.5
+_CELL_HEIGHT = 4.5
+_TITLE_FONT_SIZE = 13
+_CELL_FONT_SIZE = 9
+_BOX_WIDTH = 0.5
+_JITTER_RANGE = 0.18
+_SCATTER_SIZE = 18
 
 
 def plot_comparison(result: ComparisonResult) -> plt.Figure:
     pairs = _collect_pairs(result)
     if not pairs:
-        fig, ax = plt.subplots(figsize=(6, 3))
-        ax.text(0.5, 0.5, "No data to display", ha="center", va="center", transform=ax.transAxes)
-        ax.set_axis_off()
-        return fig
+        return _empty_figure()
 
     n_cols = min(_MAX_COLS, len(pairs))
     n_rows = math.ceil(len(pairs) / n_cols)
     fig, axes = plt.subplots(
         n_rows, n_cols,
-        figsize=(5.5 * n_cols, 4.5 * n_rows),
+        figsize=(_CELL_WIDTH * n_cols, _CELL_HEIGHT * n_rows),
         facecolor="white",
         squeeze=False,
     )
@@ -43,8 +54,15 @@ def plot_comparison(result: ComparisonResult) -> plt.Figure:
         row, col = divmod(cell_idx, n_cols)
         axes[row][col].set_visible(False)
 
-    fig.suptitle("Parameter Comparison", fontsize=13, fontweight="bold", y=1.01)
+    fig.suptitle("Parameter Comparison", fontsize=_TITLE_FONT_SIZE, fontweight="bold", y=1.01)
     fig.tight_layout()
+    return fig
+
+
+def _empty_figure() -> plt.Figure:
+    fig, ax = plt.subplots(figsize=_EMPTY_FIGURE_SIZE)
+    ax.text(0.5, 0.5, "No data to display", ha="center", va="center", transform=ax.transAxes)
+    ax.set_axis_off()
     return fig
 
 
@@ -52,14 +70,23 @@ def _collect_pairs(result: ComparisonResult) -> list[tuple[Fragment, ForceFieldP
     seen: set[tuple] = set()
     ordered: list[tuple[Fragment, ForceFieldParameter]] = []
     for analysis in result.results.values():
-        for fragment, param_map in analysis.items():
-            for parameter, values in param_map.items():
-                if values:
-                    key = (fragment.pattern, type(parameter).__name__, parameter)
-                    if key not in seen:
-                        seen.add(key)
-                        ordered.append((fragment, parameter))
+        _collect_pairs_from_analysis(analysis, seen, ordered)
     return ordered
+
+
+def _collect_pairs_from_analysis(
+    analysis: dict,
+    seen: set[tuple],
+    ordered: list[tuple[Fragment, ForceFieldParameter]],
+) -> None:
+    for fragment, param_map in analysis.items():
+        for parameter, values in param_map.items():
+            if not values:
+                continue
+            key = (fragment.pattern, type(parameter).__name__, parameter)
+            if key not in seen:
+                seen.add(key)
+                ordered.append((fragment, parameter))
 
 
 def _draw_comparison_cell(
@@ -72,20 +99,9 @@ def _draw_comparison_cell(
 ) -> None:
     clean_ax(ax)
 
-    per_molecule_values = []
-    tick_labels = []
-    present_colors = []
-    for label in molecule_labels:
-        analysis = result.results.get(label, {})
-        values = []
-        for frag, param_map in analysis.items():
-            if frag.pattern == fragment.pattern:
-                values = param_map.get(parameter, [])
-                break
-        if values:
-            per_molecule_values.append(values)
-            tick_labels.append(label)
-            present_colors.append(color_map[label])
+    per_molecule_values, tick_labels, present_colors = _gather_molecule_values(
+        result, fragment, parameter, molecule_labels, color_map
+    )
 
     if not per_molecule_values:
         ax.set_axis_off()
@@ -95,7 +111,7 @@ def _draw_comparison_cell(
     bp = ax.boxplot(
         per_molecule_values,
         positions=positions,
-        widths=0.5,
+        widths=_BOX_WIDTH,
         patch_artist=True,
         medianprops=dict(color="#333333", linewidth=1.8),
         whiskerprops=dict(color="#888888"),
@@ -109,12 +125,12 @@ def _draw_comparison_cell(
         patch.set_alpha(0.65)
 
     for i, (values, color) in enumerate(zip(per_molecule_values, present_colors), start=1):
-        jitter = np.random.default_rng(i).uniform(-0.18, 0.18, len(values))
+        jitter = np.random.default_rng(i).uniform(-_JITTER_RANGE, _JITTER_RANGE, len(values))
         ax.scatter(
             np.full(len(values), i) + jitter,
             values,
             color=color,
-            s=18,
+            s=_SCATTER_SIZE,
             alpha=0.7,
             zorder=5,
             edgecolors="white",
@@ -122,17 +138,48 @@ def _draw_comparison_cell(
         )
 
     ax.set_xticks(positions)
-    ax.set_xticklabels(tick_labels, fontsize=9)
-    ax.set_ylabel(_parameter_label(parameter), fontsize=9)
-    ax.set_title(f"{fragment.pattern}\n{parameter.name.replace('_', ' ').title()}", fontsize=9, pad=5)
+    ax.set_xticklabels(tick_labels, fontsize=_CELL_FONT_SIZE)
+    ax.set_ylabel(_parameter_label(parameter), fontsize=_CELL_FONT_SIZE)
+    ax.set_title(
+        f"{fragment.pattern}\n{parameter.name.replace('_', ' ').title()}",
+        fontsize=_CELL_FONT_SIZE,
+        pad=5,
+    )
     ax.grid(axis="y", color="#EBEBEB", linewidth=0.8, zorder=0)
+
+
+def _gather_molecule_values(
+    result: ComparisonResult,
+    fragment: Fragment,
+    parameter: ForceFieldParameter,
+    molecule_labels: list[str],
+    color_map: dict[str, str],
+) -> tuple[list[list[float]], list[str], list[str]]:
+    per_molecule_values = []
+    tick_labels = []
+    present_colors = []
+    for label in molecule_labels:
+        values = _find_values_for_fragment(result.results.get(label, {}), fragment, parameter)
+        if values:
+            per_molecule_values.append(values)
+            tick_labels.append(label)
+            present_colors.append(color_map[label])
+    return per_molecule_values, tick_labels, present_colors
+
+
+def _find_values_for_fragment(
+    analysis: dict,
+    fragment: Fragment,
+    parameter: ForceFieldParameter,
+) -> list[float]:
+    for frag, param_map in analysis.items():
+        if frag.pattern == fragment.pattern:
+            return param_map.get(parameter, [])
+    return []
 
 
 def _parameter_label(parameter: ForceFieldParameter) -> str:
     name = parameter.name.replace("_", " ").lower()
-    from polymer_md.parameterisation.fragments.data_models.parameters import (
-        AngleParameter, BondParameter, DihedralParameter, AtomParameter,
-    )
     if isinstance(parameter, BondParameter):
         return "Bond k (kcal/mol/Å²)" if "force" in name else "r₀ (Å)"
     if isinstance(parameter, AngleParameter):

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 import parmed as pmd
 from rdkit import Chem
+
+logger = logging.getLogger(__name__)
 
 from polymer_md.analysis.results import AnalysisResult, ComparisonResult
 from polymer_md.parameterisation.data_models.parameterised_mol import ParameterisedMolecule
@@ -48,8 +51,13 @@ class ParameterComparator:
                 try:
                     value = FragmentMatcher._extract_value(structure, global_indices, member)
                     values.append(value)
-                except (ValueError, AttributeError, TypeError):
-                    pass
+                except (ValueError, AttributeError, TypeError) as error:
+                    logger.warning(
+                        "Parameter lookup failed for %s indices %s: %s",
+                        type(member.parameter).__name__,
+                        global_indices,
+                        error,
+                    )
             if values:
                 param_values[member.parameter] = values
         return param_values

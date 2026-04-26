@@ -21,3 +21,7 @@ wheels/
 *.DS_Store
 
 output/
+
+pmma20_dpnb_4wt/
+
+full_polymer_results/
