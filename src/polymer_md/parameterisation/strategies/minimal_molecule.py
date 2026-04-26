@@ -24,6 +24,7 @@ from polymer_md.parameterisation.strategies.base import (
     MissingParameterError,
     StrategyContext,
 )
+from polymer_md.utils.parmed_helper import ParmedTypeResolver
 from polymer_md.utils.rdkit_helper import RDKitHelper
 
 
@@ -137,9 +138,10 @@ class MinimalMoleculeStrategy:
         index_set = frozenset(atom_indices)
         for bond in structure.bonds:
             if frozenset({bond.atom1.idx, bond.atom2.idx}) == index_set:
+                bond_type = ParmedTypeResolver.bond_type(bond)
                 if parameter == BondParameter.FORCE_CONSTANT:
-                    return float(bond.type.k)
-                return float(bond.type.req)
+                    return float(bond_type.k)
+                return float(bond_type.req)
         raise MissingParameterError(
             f"Bond not found between atoms {atom_indices} in minimal structure"
         )
@@ -156,9 +158,10 @@ class MinimalMoleculeStrategy:
                 frozenset({angle.atom1.idx, angle.atom2.idx, angle.atom3.idx})
                 == index_set
             ):
+                angle_type = ParmedTypeResolver.angle_type(angle)
                 if parameter == AngleParameter.FORCE_CONSTANT:
-                    return float(angle.type.k)
-                return float(angle.type.theteq)
+                    return float(angle_type.k)
+                return float(angle_type.theteq)
         raise MissingParameterError(
             f"Angle not found for atoms {atom_indices} in minimal structure"
         )
@@ -182,11 +185,12 @@ class MinimalMoleculeStrategy:
                 }
             )
             if indices == index_set:
+                dihedral_type = ParmedTypeResolver.dihedral_type(dihedral)
                 if parameter == DihedralParameter.FORCE_CONSTANT:
-                    return float(dihedral.type.phi_k)
+                    return float(dihedral_type.phi_k)
                 if parameter == DihedralParameter.PHASE:
-                    return float(dihedral.type.phase)
-                return float(dihedral.type.per)
+                    return float(dihedral_type.phase)
+                return float(dihedral_type.per)
         raise MissingParameterError(
             f"Dihedral not found for atoms {atom_indices} in minimal structure"
         )

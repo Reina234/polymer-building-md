@@ -3,6 +3,7 @@ from __future__ import annotations
 import parmed as pmd
 from rdkit import Chem
 
+from polymer_md.utils.parmed_helper import ParmedTypeResolver
 from polymer_md.parameterisation.fragments.data_models.annotated_members import (
     AnnotatedAngle,
     AnnotatedAtom,
@@ -123,10 +124,11 @@ class FragmentMatcher:
 
     @staticmethod
     def _read_bond_parameter(bond: pmd.Bond, parameter: BondParameter) -> float:
+        bond_type = ParmedTypeResolver.bond_type(bond)
         if parameter == BondParameter.FORCE_CONSTANT:
-            return float(bond.type.k)
+            return float(bond_type.k)
         if parameter == BondParameter.EQUILIBRIUM_LENGTH:
-            return float(bond.type.req)
+            return float(bond_type.req)
         raise ValueError(f"Unknown bond parameter: {parameter}")  # pragma: no cover
 
     @staticmethod
@@ -143,10 +145,11 @@ class FragmentMatcher:
 
     @staticmethod
     def _read_angle_parameter(angle: pmd.Angle, parameter: AngleParameter) -> float:
+        angle_type = ParmedTypeResolver.angle_type(angle)
         if parameter == AngleParameter.FORCE_CONSTANT:
-            return float(angle.type.k)
+            return float(angle_type.k)
         if parameter == AngleParameter.EQUILIBRIUM_ANGLE:
-            return float(angle.type.theteq)
+            return float(angle_type.theteq)
         raise ValueError(f"Unknown angle parameter: {parameter}")  # pragma: no cover
 
     @staticmethod
@@ -165,15 +168,13 @@ class FragmentMatcher:
 
     @staticmethod
     def _read_dihedral_parameter(dihedral: pmd.Dihedral, parameter: DihedralParameter) -> float:
-        dtype = dihedral.type
-        if not hasattr(dtype, "phi_k"):
-            dtype = dtype[0]
+        dihedral_type = ParmedTypeResolver.dihedral_type(dihedral)
         if parameter == DihedralParameter.FORCE_CONSTANT:
-            return float(dtype.phi_k)
+            return float(dihedral_type.phi_k)
         if parameter == DihedralParameter.PHASE:
-            return float(dtype.phase)
+            return float(dihedral_type.phase)
         if parameter == DihedralParameter.PERIODICITY:
-            return float(dtype.per)
+            return float(dihedral_type.per)
         raise ValueError(f"Unknown dihedral parameter: {parameter}")  # pragma: no cover
 
     @staticmethod
