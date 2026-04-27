@@ -131,7 +131,7 @@ class RegionFragmentExtractor:
         members = []
         for angle in structure.angles:
             atom_i, atom_j, atom_k = angle.atom1.idx, angle.atom2.idx, angle.atom3.idx
-            if atom_j not in region_parmed_indices:
+            if not any(idx in region_parmed_indices for idx in (atom_i, atom_j, atom_k)):
                 continue
             if not self._all_in_context(global_to_local, atom_i, atom_j, atom_k):
                 continue
@@ -162,7 +162,7 @@ class RegionFragmentExtractor:
             atom_j = dihedral.atom2.idx
             atom_k = dihedral.atom3.idx
             atom_l = dihedral.atom4.idx
-            if not self._touches_region(region_parmed_indices, atom_j, atom_k):
+            if not any(idx in region_parmed_indices for idx in (atom_i, atom_j, atom_k, atom_l)):
                 continue
             if not self._all_in_context(global_to_local, atom_i, atom_j, atom_k, atom_l):
                 continue
@@ -188,11 +188,15 @@ class RegionFragmentExtractor:
         for dihedral in structure.dihedrals:
             if self._should_skip_improper(dihedral, derived_mol, region_parmed_indices, global_to_local):
                 continue
-            key = (dihedral.atom1.idx, dihedral.atom2.idx, dihedral.atom3.idx, dihedral.atom4.idx)
+            center = dihedral.atom3.idx
+            others = sorted([dihedral.atom1.idx, dihedral.atom2.idx, dihedral.atom4.idx])
+            key = (others[0], others[1], center, others[2])
             if key in seen:
                 continue
             seen.add(key)
-            local_key = tuple(global_to_local[idx] for idx in key)
+            center_local = global_to_local[center]
+            others_local = sorted([global_to_local[o] for o in others])
+            local_key = (others_local[0], others_local[1], center_local, others_local[2])
             members.append(AnnotatedImproper(local_indices=local_key, parameter=ImproperParameter.FORCE_CONSTANT))
         return members
 
@@ -205,14 +209,14 @@ class RegionFragmentExtractor:
     ) -> bool:
         if not dihedral.improper:
             return True
-        atom_j = dihedral.atom2.idx
-        if atom_j not in region_parmed_indices:
+        center = dihedral.atom3.idx
+        if center not in region_parmed_indices:
             return True
-        if not self._is_sp2(derived_mol, atom_j):
+        if not self._is_sp2(derived_mol, center):
             return True
         return not self._all_in_context(
             global_to_local,
-            dihedral.atom1.idx, atom_j, dihedral.atom3.idx, dihedral.atom4.idx,
+            dihedral.atom1.idx, dihedral.atom2.idx, center, dihedral.atom4.idx,
         )
 
     @staticmethod

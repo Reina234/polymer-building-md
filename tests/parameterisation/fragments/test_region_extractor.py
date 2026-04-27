@@ -241,8 +241,10 @@ class TestExtractAngleMembers:
         # Middle carbon is the centre of all H-C-C and H-C-H angles
         assert len(fragment.annotated_angles) > 0
 
-    def test_angle_middle_not_in_region_excluded(self, propane_mol, propane_structure):
-        # Only terminal C (index 0) in region; angles centred on C1 not included
+    def test_angles_with_no_atom_in_region_excluded(self, propane_mol, propane_structure):
+        # Only terminal C (index 0) in region; angles where no atom touches region excluded.
+        # Angles spanning into region (atom 0 as endpoint) are now included, consistent
+        # with the "touches region" rule used for bonds.
         region = frozenset([0])
         context = frozenset(range(propane_mol.GetNumAtoms()))
         extractor = RegionFragmentExtractor()
@@ -251,11 +253,10 @@ class TestExtractAngleMembers:
             context_parmed_indices=context,
             region_parmed_indices=region,
         )
+        local_to_global = {v: k for k, v in global_to_local.items()}
         for member in fragment.annotated_angles:
-            # The middle local index must map to atom in region
-            middle_local = member.local_indices[1]
-            middle_global = next(g for g, l in global_to_local.items() if l == middle_local)
-            assert middle_global in region
+            global_indices = tuple(local_to_global[li] for li in member.local_indices)
+            assert any(g in region for g in global_indices)
 
 
 # ---------------------------------------------------------------------------

@@ -20,8 +20,8 @@ from polymer_md.utils.parmed_helper import StructureMolDeriver
 class ParameterComparator:
     fragments: list[Fragment]
 
-    def extract(self, structure: pmd.Structure) -> AnalysisResult:
-        derived_mol = StructureMolDeriver.derive(structure)
+    def extract(self, structure: pmd.Structure, mol: Chem.Mol | None = None) -> AnalysisResult:
+        derived_mol = mol if mol is not None else StructureMolDeriver.derive(structure)
         result: AnalysisResult = {}
         for fragment in self.fragments:
             result[fragment] = self._extract_fragment(fragment, structure, derived_mol)
@@ -30,7 +30,7 @@ class ParameterComparator:
     def compare(self, molecules: dict[str, ParameterisedMolecule]) -> ComparisonResult:
         results = {}
         for label, parameterised_mol in molecules.items():
-            results[label] = self.extract(parameterised_mol.structure)
+            results[label] = self.extract(parameterised_mol.structure, parameterised_mol.mol)
         return ComparisonResult(results=results)
 
     @staticmethod

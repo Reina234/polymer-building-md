@@ -84,7 +84,8 @@ class TrimerParameterisationPipeline:
             smiles = RDKitHelper.canonical_smiles_stripped(trimer.mol)
             if smiles in smiles_cache:
                 logger.info(
-                    "Skipping %s (duplicate of cached trimer by canonical SMILES).", trimer.label
+                    "Skipping %s (duplicate of cached trimer by canonical SMILES).",
+                    trimer.label,
                 )
                 results.append(smiles_cache[smiles])
                 continue
@@ -116,6 +117,28 @@ class TrimerParameterisationPipeline:
         name = self._trimer_name(trimer)
         trimer_dir = output_dir / name
         trimer_dir.mkdir(parents=True, exist_ok=True)
+
+        acpype_dir = trimer_dir / f"{name}.acpype"
+        itp = acpype_dir / f"{name}_GMX.itp"
+        gro = acpype_dir / f"{name}_GMX.gro"
+        top = acpype_dir / f"{name}_GMX.top"
+
+        if itp.exists() and gro.exists() and top.exists():
+            gromacs_files = GromacsFiles(itp=itp, gro=gro, top=top)
+            logger.info("  [%s] Reusing cached GROMACS files.", name)
+            mol_3d = self.conformer_generator.embed(trimer.mol)
+            structure = pmd.load_file(
+                str(gromacs_files.top), xyz=str(gromacs_files.gro)
+            )
+            logger.info(
+                "  [%s] Done. Atoms in structure: %d", name, len(structure.atoms)
+            )
+            return ParameterisedTrimer(
+                trimer_result=trimer,
+                gromacs_files=gromacs_files,
+                structure=structure,
+                mol_3d=mol_3d,
+            )
 
         logger.info("  [%s] Embedding 3D conformer...", name)
         mol_3d = self.conformer_generator.embed(trimer.mol)

@@ -49,13 +49,13 @@ class TerminalFragmentExtractor:
             extractor.extract(
                 derived_mol=derived_mol,
                 structure=parameterised_trimer.structure,
-                context_parmed_indices=left_indices | central_indices | left_cap,
+                context_parmed_indices=left_indices | left_cap,
                 region_parmed_indices=left_indices,
             ),
             extractor.extract(
                 derived_mol=derived_mol,
                 structure=parameterised_trimer.structure,
-                context_parmed_indices=right_indices | central_indices | right_cap,
+                context_parmed_indices=right_indices | right_cap,
                 region_parmed_indices=right_indices,
             ),
         ]

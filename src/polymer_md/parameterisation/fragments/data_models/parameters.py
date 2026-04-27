@@ -17,8 +17,6 @@ class AngleParameter(Enum):
 
 class DihedralParameter(Enum):
     FORCE_CONSTANT = auto()
-    PHASE = auto()
-    PERIODICITY = auto()
 
 
 class AtomParameter(Enum):

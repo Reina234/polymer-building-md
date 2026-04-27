@@ -17,12 +17,14 @@ class ETKDGConformerGenerator(ConformerGenerator):
     use_uff: bool = False
     random_seed: int = 42
     max_iterations: int = 1000
+    use_random_coords: bool = False
 
     def embed(self, mol: Chem.Mol) -> Chem.Mol:
         mol_with_hs = Chem.AddHs(mol)
         parameters = AllChem.ETKDGv3()
         parameters.randomSeed = self.random_seed
         parameters.maxIterations = self.max_iterations
+        parameters.useRandomCoords = self.use_random_coords
         result = AllChem.EmbedMolecule(mol_with_hs, parameters)
         if result == -1:
             raise ConformerEmbeddingError(

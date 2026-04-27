@@ -197,11 +197,9 @@ class PolymerParameterisationTiler:
         for dihedral in structure.dihedrals:
             if not dihedral.improper:
                 continue
-            i, j, k, l = (
-                dihedral.atom1.idx, dihedral.atom2.idx,
-                dihedral.atom3.idx, dihedral.atom4.idx,
-            )
-            canonical = (i, j, k, l)
+            center = dihedral.atom3.idx
+            others = sorted([dihedral.atom1.idx, dihedral.atom2.idx, dihedral.atom4.idx])
+            canonical = (others[0], others[1], center, others[2])
             values: list[tuple[DihedralTerm, ...]] = [
                 v for v in assignments.get((canonical, ImproperParameter.FORCE_CONSTANT), [])
                 if isinstance(v, tuple)
@@ -253,6 +251,10 @@ class PolymerParameterisationTiler:
         if isinstance(member, AnnotatedAngle):
             i, j, k = global_indices
             return (min(i, k), j, max(i, k))
+        if isinstance(member, AnnotatedImproper):
+            center = global_indices[2]
+            others = sorted([global_indices[0], global_indices[1], global_indices[3]])
+            return (others[0], others[1], center, others[2])
         forward = global_indices
         reverse = global_indices[::-1]
         return min(forward, reverse)
