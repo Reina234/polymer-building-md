@@ -5,14 +5,22 @@ from rdkit import Chem
 
 class SmartsBuilder:
     @staticmethod
-    def atom(atom: Chem.Atom) -> str:
+    def atom(atom: Chem.Atom, include_h_count: bool = True) -> str:
         atomic_number = atom.GetAtomicNum()
         aromaticity_flag = "a" if atom.GetIsAromatic() else "A"
         formal_charge = atom.GetFormalCharge()
+        # H-count constraint (explicit-H molecule: count H neighbors directly).
+        # Distinguishes CH3/CH2/CH/quaternary without relying on force-field types.
+        # Skipped for H atoms themselves (they carry no further H).
+        # Must be disabled when building queries against SMARTS molecules (no implicit valence).
+        h_part = ""
+        if include_h_count and atomic_number != 1:
+            h_count = sum(1 for nb in atom.GetNeighbors() if nb.GetAtomicNum() == 1)
+            h_part = f";H{h_count}"
         if formal_charge != 0:
             charge_sign = "+" if formal_charge > 0 else ""
-            return f"[#{atomic_number};{aromaticity_flag};{charge_sign}{formal_charge}]"
-        return f"[#{atomic_number};{aromaticity_flag}]"
+            return f"[#{atomic_number};{aromaticity_flag}{h_part};{charge_sign}{formal_charge}]"
+        return f"[#{atomic_number};{aromaticity_flag}{h_part}]"
 
     @staticmethod
     def bond(bond: Chem.Bond) -> str:
@@ -31,6 +39,7 @@ class SmartsBuilder:
     def subgraph(
         mol: Chem.Mol,
         atom_indices: tuple[int, ...],
+        include_h_count: bool = True,
     ) -> tuple[str, dict[int, int]]:
         """Build SMARTS for a connected subgraph with deterministic atom ordering.
 
@@ -80,7 +89,7 @@ class SmartsBuilder:
             global_to_local[idx] = counter[0]
             counter[0] += 1
 
-            atom_smarts = SmartsBuilder.atom(mol.GetAtomWithIdx(idx))
+            atom_smarts = SmartsBuilder.atom(mol.GetAtomWithIdx(idx), include_h_count=include_h_count)
             suffix = "".join(closure_suffix[idx])
 
             children = sorted(
