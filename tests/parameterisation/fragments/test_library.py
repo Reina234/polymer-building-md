@@ -187,3 +187,48 @@ class TestFragmentLibraryHitValuesQuery:
 
         # assert – BondParameter record has multi-index hits, should be excluded
         assert values == []
+
+
+class TestFragmentLibraryMerge:
+    def _make_record(self, global_indices, parameter, value, pattern, local_indices):
+        hit = ParameterHit(
+            value=value,
+            fragment=Fragment(pattern=pattern),
+            match_instance=0,
+            member_local_indices=local_indices,
+        )
+        return ParameterRecord(global_indices=global_indices, parameter=parameter, hits=(hit,))
+
+    def test_merge_no_overlap_returns_union(self):
+        r1 = self._make_record((0,), AtomParameter.CHARGE, -0.1, "[#6]", (0,))
+        r2 = self._make_record((1,), AtomParameter.CHARGE, -0.2, "[#6]", (0,))
+        lib_a = FragmentLibrary(records=(r1,), atom_metadata={})
+        lib_b = FragmentLibrary(records=(r2,), atom_metadata={})
+        merged = FragmentLibrary.merge(lib_a, lib_b)
+        assert len(merged.records) == 2
+
+    def test_merge_with_duplicates_no_repeated_records(self):
+        r1 = self._make_record((0,), AtomParameter.CHARGE, -0.1, "[#6]", (0,))
+        lib_a = FragmentLibrary(records=(r1,), atom_metadata={})
+        lib_b = FragmentLibrary(records=(r1,), atom_metadata={})
+        merged = FragmentLibrary.merge(lib_a, lib_b)
+        assert len(merged.records) == 1
+
+    def test_merge_atom_metadata_combined(self):
+        lib_a = FragmentLibrary(records=(), atom_metadata={"[#6]": {0: AtomMetadata("c3", "S", 0)}})
+        lib_b = FragmentLibrary(records=(), atom_metadata={"[#7]": {0: AtomMetadata("n", "T", 1)}})
+        merged = FragmentLibrary.merge(lib_a, lib_b)
+        assert "[#6]" in merged.atom_metadata
+        assert "[#7]" in merged.atom_metadata
+
+    def test_merge_different_schema_versions_raises(self):
+        lib_a = FragmentLibrary(records=(), atom_metadata={}, schema_version="1")
+        lib_b = FragmentLibrary(records=(), atom_metadata={}, schema_version="2")
+        with pytest.raises(ValueError, match="schema versions"):
+            FragmentLibrary.merge(lib_a, lib_b)
+
+    def test_merge_preserves_schema_version(self):
+        lib_a = FragmentLibrary(records=(), atom_metadata={})
+        lib_b = FragmentLibrary(records=(), atom_metadata={})
+        merged = FragmentLibrary.merge(lib_a, lib_b)
+        assert merged.schema_version == lib_a.schema_version

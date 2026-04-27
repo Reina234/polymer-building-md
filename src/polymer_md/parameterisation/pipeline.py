@@ -79,9 +79,19 @@ class TrimerParameterisationPipeline:
         )
 
         results = []
+        smiles_cache: dict[str, ParameterisedTrimer] = {}
         for trimer in tqdm(selected, desc="Parameterizing trimers", unit="trimer"):
+            smiles = RDKitHelper.canonical_smiles_stripped(trimer.mol)
+            if smiles in smiles_cache:
+                logger.info(
+                    "Skipping %s (duplicate of cached trimer by canonical SMILES).", trimer.label
+                )
+                results.append(smiles_cache[smiles])
+                continue
             logger.info("Parameterizing %s  p=%.4f", trimer.label, trimer.probability)
-            results.append(self._parameterise_trimer(trimer, output_dir))
+            parameterised = self._parameterise_trimer(trimer, output_dir)
+            smiles_cache[smiles] = parameterised
+            results.append(parameterised)
 
         logger.info("Pipeline complete: %d trimers parameterised.", len(results))
         return results

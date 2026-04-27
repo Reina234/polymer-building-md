@@ -198,6 +198,23 @@ class TestPolymerPipelineRun:
             assert gromacs_files.top.exists()
             assert gromacs_files.itp.exists()
 
+    def test_save_gromacs_writes_gaff2_fudge_factors(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            structure = pmd.Structure()
+            atom = pmd.Atom()
+            atom.xx = 0.0; atom.xy = 0.0; atom.xz = 0.0
+            structure.add_atom(atom, "MOL", 1)
+
+            pipeline = PolymerParameterisationPipeline(
+                library=_empty_library(), specs=_specs(), n=3, output_dir=tmp,
+            )
+            gromacs_files = pipeline._save_gromacs(structure)
+            top_text = gromacs_files.top.read_text()
+            assert "0.5" in top_text
+            assert "0.8333" in top_text
+
     def test_adjust_charge_skipped_when_disabled(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

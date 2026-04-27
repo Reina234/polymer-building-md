@@ -136,6 +136,28 @@ class FragmentLibrary:
                     targets.add((pattern, local_idx))
         return targets
 
+    @classmethod
+    def merge(cls, first: FragmentLibrary, second: FragmentLibrary) -> FragmentLibrary:
+        if first.schema_version != second.schema_version:
+            raise ValueError(
+                f"Cannot merge libraries with different schema versions: "
+                f"{first.schema_version!r} vs {second.schema_version!r}"
+            )
+        return cls(
+            records=cls._merged_records(first.records, second.records),
+            atom_metadata={**first.atom_metadata, **second.atom_metadata},
+            schema_version=first.schema_version,
+        )
+
+    @staticmethod
+    def _merged_records(
+        first: tuple[ParameterRecord, ...],
+        second: tuple[ParameterRecord, ...],
+    ) -> tuple[ParameterRecord, ...]:
+        seen = {(r.global_indices, r.parameter) for r in first}
+        additional = [r for r in second if (r.global_indices, r.parameter) not in seen]
+        return first + tuple(additional)
+
     def save(self, path: Path) -> None:
         data = {
             "schema_version": self.schema_version,

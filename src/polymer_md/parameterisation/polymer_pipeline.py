@@ -13,6 +13,8 @@ from polymer_md.building.solvers.proportional import ProportionalSolver
 from polymer_md.building.trimer_builder import TrimerBuilder
 from polymer_md.building.monomer_converter import MonomerToResidueConverter
 from polymer_md.building.random_polymer import RandomPolymerBuilder
+from parmed.gromacs import GromacsTopologyFile
+
 from polymer_md.conversion.gromacs_files import GromacsFiles
 from polymer_md.core.caps import BuiltinCap, Cap
 from polymer_md.core.polymer import Polymer
@@ -121,6 +123,10 @@ class PolymerParameterisationPipeline:
         top_path = self.output_dir / f"{name}.top"
         itp_path = self.output_dir / f"{name}.itp"
         structure.save(str(gro_path), overwrite=True)
-        structure.save(str(top_path), overwrite=True)
-        structure.save(str(itp_path), format="GROMACS", overwrite=True)
+        top = GromacsTopologyFile.from_structure(structure)
+        top.defaults.fudgeLJ = 0.5
+        top.defaults.fudgeQQ = 0.8333
+        top.defaults.gen_pairs = "yes"
+        top.save(str(top_path), overwrite=True)
+        top.save(str(itp_path), format="GROMACS", overwrite=True)
         return GromacsFiles(itp=itp_path, gro=gro_path, top=top_path)
