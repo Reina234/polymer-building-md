@@ -56,9 +56,9 @@ def _make_specs() -> list[MonomerSpec]:
     ba = MonomerToResidueConverter.convert(Monomer(smiles="C=CC(=O)OCCCC", label="BA"))
     maa = MonomerToResidueConverter.convert(Monomer(smiles="C=C(C)C(=O)O", label="MAA"))
     return [
-        MonomerSpec(residue=mma, weight=0.60),
-        MonomerSpec(residue=ba, weight=0.20),
-        MonomerSpec(residue=maa, weight=0.20),
+        MonomerSpec(residue=mma, weight=0.60, ht_fraction=1),
+        MonomerSpec(residue=ba, weight=0.20, ht_fraction=1),
+        MonomerSpec(residue=maa, weight=0.20, ht_fraction=1),
     ]
 
 
@@ -100,7 +100,7 @@ def _build_library(specs: list[MonomerSpec]) -> FragmentLibrary:
         output_dir=Path("output/mmabamaa_library/trimers"),
         library_path=LIBRARY_PATH,
         conformer_generator=ETKDGConformerGenerator(use_uff=False),
-        probability_threshold=0.01,
+        probability_threshold=0.003,
         charge_method="bcc",
     )
     return pipeline.run()
@@ -115,7 +115,9 @@ def _build_polymer(
         n=20,
         output_dir=Path("output/mmabamaa_polymer"),
         seed=42,
-        conformer_generator=ETKDGConformerGenerator(use_uff=False, use_random_coords=True),
+        conformer_generator=ETKDGConformerGenerator(
+            use_uff=False, use_random_coords=True
+        ),
         missing_strategies={AtomParameter: ResiduePositionStrategy(min_matches=1)},
         adjust_charge=True,
     )

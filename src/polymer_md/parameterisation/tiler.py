@@ -59,11 +59,16 @@ class PolymerParameterisationTiler:
         )
         assignments = self._collect_assignments(derived_mol)
         gaff2_types = self._collect_gaff2_types(derived_mol)
+        missing: list[str] = []
         self._apply_atoms(structure, assignments, gaff2_types, context)
-        self._apply_bonds(structure, assignments, context)
-        self._apply_angles(structure, assignments, context)
-        self._apply_dihedrals(structure, assignments, context)
+        self._apply_bonds(structure, assignments, context, missing)
+        self._apply_angles(structure, assignments, context, missing)
+        self._apply_dihedrals(structure, assignments, context, missing)
         self._apply_impropers(structure, assignments, context)
+        if missing:
+            raise MissingParameterError(
+                f"{len(missing)} unresolved parameter(s):\n" + "\n".join(missing)
+            )
         return structure
 
     def _collect_assignments(self, derived_mol: Chem.Mol) -> dict[tuple, list[float]]:
@@ -116,8 +121,10 @@ class PolymerParameterisationTiler:
                         parameter,
                     )
                     continue
-                value = self._resolve_or_missing((atom.idx,), parameter, values, context)
-                self._set_atom_param(atom, parameter, value)
+                atom_missing: list[str] = []
+                value = self._resolve_or_missing((atom.idx,), parameter, values, context, atom_missing)
+                if value is not None:
+                    self._set_atom_param(atom, parameter, value)
             if atom.idx in gaff2_types:
                 atom.type = gaff2_types[atom.idx]
 
@@ -126,45 +133,56 @@ class PolymerParameterisationTiler:
         structure: pmd.Structure,
         assignments: dict,
         context: StrategyContext,
+        missing: list[str] | None = None,
     ) -> None:
+        if missing is None:
+            missing = []
         for bond in structure.bonds:
             i, j = bond.atom1.idx, bond.atom2.idx
             canonical = (min(i, j), max(i, j))
             k = self._resolve_or_missing(
                 canonical, BondParameter.FORCE_CONSTANT,
-                assignments.get((canonical, BondParameter.FORCE_CONSTANT), []), context
+                assignments.get((canonical, BondParameter.FORCE_CONSTANT), []), context, missing
             )
             req = self._resolve_or_missing(
                 canonical, BondParameter.EQUILIBRIUM_LENGTH,
-                assignments.get((canonical, BondParameter.EQUILIBRIUM_LENGTH), []), context
+                assignments.get((canonical, BondParameter.EQUILIBRIUM_LENGTH), []), context, missing
             )
-            bond.type = pmd.BondType(k=k, req=req)
+            if k is not None and req is not None:
+                bond.type = pmd.BondType(k=k, req=req)
 
     def _apply_angles(
         self,
         structure: pmd.Structure,
         assignments: dict,
         context: StrategyContext,
+        missing: list[str] | None = None,
     ) -> None:
+        if missing is None:
+            missing = []
         for angle in structure.angles:
             i, j, k = angle.atom1.idx, angle.atom2.idx, angle.atom3.idx
             canonical = (min(i, k), j, max(i, k))
             force_k = self._resolve_or_missing(
                 canonical, AngleParameter.FORCE_CONSTANT,
-                assignments.get((canonical, AngleParameter.FORCE_CONSTANT), []), context
+                assignments.get((canonical, AngleParameter.FORCE_CONSTANT), []), context, missing
             )
             theteq = self._resolve_or_missing(
                 canonical, AngleParameter.EQUILIBRIUM_ANGLE,
-                assignments.get((canonical, AngleParameter.EQUILIBRIUM_ANGLE), []), context
+                assignments.get((canonical, AngleParameter.EQUILIBRIUM_ANGLE), []), context, missing
             )
-            angle.type = pmd.AngleType(k=force_k, theteq=theteq)
+            if force_k is not None and theteq is not None:
+                angle.type = pmd.AngleType(k=force_k, theteq=theteq)
 
     def _apply_dihedrals(
         self,
         structure: pmd.Structure,
         assignments: dict,
         context: StrategyContext,
+        missing: list[str] | None = None,
     ) -> None:
+        if missing is None:
+            missing = []
         for dihedral in structure.dihedrals:
             if dihedral.improper:
                 continue
@@ -175,8 +193,9 @@ class PolymerParameterisationTiler:
             forward = (i, j, k, l)
             reverse = (l, k, j, i)
             canonical = min(forward, reverse)
-            terms = self._resolve_dihedral_terms(canonical, assignments, context)
-            dihedral.type = self._build_dihedral_type(terms)
+            terms = self._resolve_dihedral_terms(canonical, assignments, context, missing)
+            if terms is not None:
+                dihedral.type = self._build_dihedral_type(terms)
 
     @staticmethod
     def _build_dihedral_type(terms: tuple[DihedralTerm, ...]) -> DihedralTypeList | pmd.DihedralType:
@@ -214,7 +233,10 @@ class PolymerParameterisationTiler:
         canonical: tuple[int, ...],
         assignments: dict,
         context: StrategyContext,
-    ) -> tuple[DihedralTerm, ...]:
+        missing: list[str] | None = None,
+    ) -> tuple[DihedralTerm, ...] | None:
+        if missing is None:
+            missing = []
         values: list[tuple[DihedralTerm, ...]] = [
             v for v in assignments.get((canonical, DihedralParameter.FORCE_CONSTANT), [])
             if isinstance(v, tuple)
@@ -222,7 +244,11 @@ class PolymerParameterisationTiler:
         if values:
             return DihedralResolutionStrategy.resolve(values)
         strategy = self.missing_strategies.get(type(DihedralParameter.FORCE_CONSTANT), StrictMissingParameterStrategy())
-        result = strategy.resolve(canonical, DihedralParameter.FORCE_CONSTANT, context)
+        try:
+            result = strategy.resolve(canonical, DihedralParameter.FORCE_CONSTANT, context)
+        except MissingParameterError as exc:
+            missing.append(str(exc))
+            return None
         if isinstance(result, tuple):
             return result
         return (DihedralTerm(force_constant=float(result), phase=0.0, periodicity=1.0),)
@@ -233,11 +259,18 @@ class PolymerParameterisationTiler:
         parameter: ForceFieldParameter,
         values: list[float],
         context: StrategyContext,
-    ) -> float:
+        missing: list[str] | None = None,
+    ) -> float | None:
+        if missing is None:
+            missing = []
         if values:
             return self.resolution_strategy.resolve(values)
         strategy = self.missing_strategies.get(type(parameter), StrictMissingParameterStrategy())
-        return strategy.resolve(global_indices, parameter, context)
+        try:
+            return strategy.resolve(global_indices, parameter, context)
+        except MissingParameterError as exc:
+            missing.append(str(exc))
+            return None
 
     @staticmethod
     def _canonical_key(

@@ -25,14 +25,8 @@ class SmartsBuilder:
     @staticmethod
     def bond(bond: Chem.Bond) -> str:
         bond_type = bond.GetBondType()
-        if bond_type == Chem.BondType.SINGLE:
-            return "-"
-        if bond_type == Chem.BondType.DOUBLE:
-            return "="
         if bond_type == Chem.BondType.AROMATIC:
             return ":"
-        if bond_type == Chem.BondType.TRIPLE:
-            return "#"
         return "~"
 
     @staticmethod

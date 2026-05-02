@@ -72,15 +72,15 @@ class TestSmartsBuilderAtom:
 # ---------------------------------------------------------------------------
 
 class TestSmartsBuilderBond:
-    def test_single_bond(self):
+    def test_single_bond_returns_tilde(self):
         mol = Chem.MolFromSmiles("CC")
         bond = mol.GetBondBetweenAtoms(0, 1)
-        assert SmartsBuilder.bond(bond) == "-"
+        assert SmartsBuilder.bond(bond) == "~"
 
-    def test_double_bond(self):
+    def test_double_bond_returns_tilde(self):
         mol = Chem.MolFromSmiles("C=C")
         bond = mol.GetBondBetweenAtoms(0, 1)
-        assert SmartsBuilder.bond(bond) == "="
+        assert SmartsBuilder.bond(bond) == "~"
 
     def test_aromatic_bond(self):
         mol = Chem.MolFromSmiles("c1ccccc1")
@@ -88,10 +88,10 @@ class TestSmartsBuilderBond:
         bond = mol.GetBondBetweenAtoms(0, 1)
         assert SmartsBuilder.bond(bond) == ":"
 
-    def test_triple_bond(self):
+    def test_triple_bond_returns_tilde(self):
         mol = Chem.MolFromSmiles("C#C")
         bond = mol.GetBondBetweenAtoms(0, 1)
-        assert SmartsBuilder.bond(bond) == "#"
+        assert SmartsBuilder.bond(bond) == "~"
 
     def test_unknown_bond_type_returns_tilde(self):
         from unittest.mock import MagicMock
