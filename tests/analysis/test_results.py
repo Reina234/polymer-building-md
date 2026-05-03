@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from polymer_md.analysis.results import ComparisonResult, Summary
 from polymer_md.parameterisation.fragments.data_models.fragment import Fragment
-from polymer_md.parameterisation.fragments.data_models.parameters import AtomParameter, BondParameter
+from polymer_md.parameterisation.fragments.data_models.parameters import (
+    AngleParameter,
+    AtomParameter,
+    BondParameter,
+    DihedralParameter,
+    ImproperParameter,
+)
 
 _FRAG = Fragment(pattern="[#6;A]-[#6;A]")
 
@@ -75,3 +83,110 @@ class TestComparisonResultSummarise:
     def test_empty_results(self):
         comparison = ComparisonResult(results={})
         assert comparison.summarise() == {}
+
+
+class TestComparisonResultSaveLoad:
+    def test_round_trip_preserves_labels(self, tmp_path):
+        frag = Fragment(pattern="[#6;A]-[#6;A]")
+        results = {"mol_a": {frag: {BondParameter.FORCE_CONSTANT: [230.1, 231.5]}}}
+        comparison = ComparisonResult(results=results)
+        path = tmp_path / "results.json"
+        comparison.save(path)
+        loaded = ComparisonResult.load(path)
+        assert set(loaded.results.keys()) == {"mol_a"}
+
+    def test_round_trip_preserves_values(self, tmp_path):
+        frag = Fragment(pattern="[#6;A]-[#6;A]")
+        values = [230.1, 231.5, 229.8]
+        results = {"mol_a": {frag: {BondParameter.FORCE_CONSTANT: values}}}
+        comparison = ComparisonResult(results=results)
+        comparison.save(tmp_path / "r.json")
+        loaded = ComparisonResult.load(tmp_path / "r.json")
+        loaded_frag = Fragment(pattern="[#6;A]-[#6;A]")
+        assert loaded.results["mol_a"][loaded_frag][BondParameter.FORCE_CONSTANT] == pytest.approx(values)
+
+    def test_round_trip_multiple_parameters(self, tmp_path):
+        frag = Fragment(pattern="[#6;A]-[#6;A]")
+        results = {
+            "mol_a": {
+                frag: {
+                    BondParameter.FORCE_CONSTANT: [230.0],
+                    BondParameter.EQUILIBRIUM_LENGTH: [1.534],
+                }
+            }
+        }
+        comparison = ComparisonResult(results=results)
+        comparison.save(tmp_path / "r.json")
+        loaded = ComparisonResult.load(tmp_path / "r.json")
+        loaded_frag = Fragment(pattern="[#6;A]-[#6;A]")
+        assert BondParameter.FORCE_CONSTANT in loaded.results["mol_a"][loaded_frag]
+        assert BondParameter.EQUILIBRIUM_LENGTH in loaded.results["mol_a"][loaded_frag]
+
+    def test_round_trip_all_parameter_classes(self, tmp_path):
+        frag = Fragment(pattern="[#6;A]")
+        results = {
+            "mol": {
+                frag: {
+                    AtomParameter.CHARGE: [0.1],
+                    AngleParameter.FORCE_CONSTANT: [50.0],
+                    DihedralParameter.FORCE_CONSTANT: [1.5],
+                    ImproperParameter.FORCE_CONSTANT: [1.1],
+                }
+            }
+        }
+        comparison = ComparisonResult(results=results)
+        comparison.save(tmp_path / "r.json")
+        loaded = ComparisonResult.load(tmp_path / "r.json")
+        loaded_frag = Fragment(pattern="[#6;A]")
+        param_map = loaded.results["mol"][loaded_frag]
+        assert AtomParameter.CHARGE in param_map
+        assert AngleParameter.FORCE_CONSTANT in param_map
+        assert DihedralParameter.FORCE_CONSTANT in param_map
+        assert ImproperParameter.FORCE_CONSTANT in param_map
+
+    def test_round_trip_multiple_molecules(self, tmp_path):
+        frag = Fragment(pattern="[#6;A]")
+        results = {
+            "seed_1": {frag: {AtomParameter.CHARGE: [0.1, 0.2]}},
+            "seed_2": {frag: {AtomParameter.CHARGE: [0.15, 0.25]}},
+        }
+        comparison = ComparisonResult(results=results)
+        comparison.save(tmp_path / "r.json")
+        loaded = ComparisonResult.load(tmp_path / "r.json")
+        assert set(loaded.results.keys()) == {"seed_1", "seed_2"}
+
+    def test_save_creates_parent_directories(self, tmp_path):
+        frag = Fragment(pattern="[#6;A]")
+        results = {"mol": {frag: {AtomParameter.CHARGE: [0.1]}}}
+        comparison = ComparisonResult(results=results)
+        nested_path = tmp_path / "deep" / "nested" / "results.json"
+        comparison.save(nested_path)
+        assert nested_path.exists()
+
+    def test_load_rejects_unknown_schema_version(self, tmp_path):
+        path = tmp_path / "bad.json"
+        path.write_text(json.dumps({"schema_version": "99", "results": {}}))
+        with pytest.raises(ValueError, match="schema version"):
+            ComparisonResult.load(path)
+
+    def test_load_unknown_parameter_key_raises(self, tmp_path):
+        path = tmp_path / "bad.json"
+        path.write_text(json.dumps({
+            "schema_version": "1",
+            "results": {"mol": {"[#6]": {"UnknownClass.FORCE_CONSTANT": [1.0]}}},
+        }))
+        with pytest.raises(ValueError, match="Unknown parameter key"):
+            ComparisonResult.load(path)
+
+    def test_saved_json_is_human_readable(self, tmp_path):
+        frag = Fragment(pattern="[#6;A]-[#6;A]")
+        results = {"mol_a": {frag: {BondParameter.FORCE_CONSTANT: [230.0]}}}
+        comparison = ComparisonResult(results=results)
+        path = tmp_path / "r.json"
+        comparison.save(path)
+        raw = json.loads(path.read_text())
+        assert "schema_version" in raw
+        assert "results" in raw
+        assert "mol_a" in raw["results"]
+        assert "[#6;A]-[#6;A]" in raw["results"]["mol_a"]
+        assert "BondParameter.FORCE_CONSTANT" in raw["results"]["mol_a"]["[#6;A]-[#6;A]"]
