@@ -6,17 +6,14 @@ from pathlib import Path
 
 import numpy as np
 import parmed as pmd
+from parmed.gromacs import GromacsTopologyFile
 
 from polymer_md.building.data_models.monomer_spec import MonomerSpec
-from polymer_md.building.data_models.residue import AdditionPolymerResidue
 from polymer_md.building.data_models.trimer import TrimerResult
 from polymer_md.building.solvers.base import TransitionMatrixSolver
 from polymer_md.building.solvers.proportional import ProportionalSolver
 from polymer_md.building.trimer_builder import TrimerBuilder
-from polymer_md.building.monomer_converter import MonomerToResidueConverter
 from polymer_md.building.random_polymer import RandomPolymerBuilder
-from parmed.gromacs import GromacsTopologyFile
-
 from polymer_md.conversion.gromacs_files import GromacsFiles
 from polymer_md.core.caps import BuiltinCap, Cap
 from polymer_md.core.polymer import Polymer
@@ -30,7 +27,6 @@ from polymer_md.parameterisation.fragments.matching.resolution import MeanStrate
 from polymer_md.parameterisation.fragments.data_models.match import ResolutionStrategy
 from polymer_md.parameterisation.pipeline import TrimerParameterisationPipeline
 from polymer_md.parameterisation.strategies.base import MissingParameterStrategy
-from polymer_md.parameterisation.strategies.strict import StrictMissingParameterStrategy
 from polymer_md.parameterisation.tiler import PolymerParameterisationTiler, adjust_charge_neutrality
 from polymer_md.utils.parmed_helper import StructureMolDeriver
 from polymer_md.utils.topology_builder import TopologyBuilder
@@ -39,7 +35,14 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class PolymerParameterisationPipeline:
+class PolymerFirstParameterisationPipeline:
+    """Parameterises a polymer by deriving the required trimers from the actual
+    polymer sequence rather than pre-building all possible combinations.
+
+    This guarantees that every monomer environment in the polymer is covered
+    and avoids parameterising trimers that never appear.
+    """
+
     specs: list[MonomerSpec]
     n: int
     output_dir: Path
@@ -52,14 +55,52 @@ class PolymerParameterisationPipeline:
     adjust_charge: bool = True
     charge_method: str = "bcc"
 
-    def run(self) -> ParameterisedMolecule:
+    def run(self) -> tuple[ParameterisedMolecule, FragmentLibrary]:
+        if self.n < 3:
+            raise ValueError(
+                f"PolymerFirstParameterisationPipeline requires n >= 3 "
+                f"(need at least one interior monomer for context), got n={self.n}."
+            )
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info("Building %d-mer polymer...", self.n)
+        logger.info("Building %d-mer polymer sequence...", self.n)
         polymer = self._build_polymer()
 
-        logger.info("Building fragment library from polymer contexts...")
-        library = self._build_library_for_polymer(polymer)
+        logger.info("Extracting unique trimer environments from polymer sequence...")
+        triplets = self._extract_triplets(polymer)
+        logger.info(
+            "Found %d unique trimer environments: %s",
+            len(triplets),
+            triplets,
+        )
+
+        logger.info("Building trimers for extracted environments...")
+        residues = {spec.residue_id: spec.residue for spec in self.specs}
+        matrix = self.solver.solve(self.specs)
+        all_trimers = TrimerBuilder(
+            residues=residues, matrix=matrix, cap=self.cap
+        ).build_for_triplets(set(triplets))
+        trimers = [t for t in all_trimers if t.probability > 0]
+        logger.info(
+            "Built %d unique trimers (%d with zero probability dropped).",
+            len(trimers),
+            len(all_trimers) - len(trimers),
+        )
+
+        logger.info("Parameterising trimers...")
+        trimer_pipeline = TrimerParameterisationPipeline(
+            specs=self.specs,
+            cap=self.cap,
+            solver=self.solver,
+            conformer_generator=self.conformer_generator,
+            charge_method=self.charge_method,
+        )
+        trimers_dir = self.output_dir / "trimers"
+        parameterised_trimers = trimer_pipeline.run_selected(trimers, trimers_dir)
+
+        logger.info("Building fragment library...")
+        library = FragmentLibraryBuilder().build(parameterised_trimers)
+        logger.info("Library built: %d records.", len(library.records))
 
         logger.info("Embedding 3D conformer...")
         mol_3d = self.conformer_generator.embed(polymer.mol)
@@ -88,61 +129,8 @@ class PolymerParameterisationPipeline:
         logger.info("Saving GROMACS files...")
         gromacs_files = self._save_gromacs(structure)
 
-        logger.info("PolymerParameterisationPipeline complete.")
-        return ParameterisedMolecule(structure=structure, mol=mol_3d, source=gromacs_files)
-
-    def _build_library_for_polymer(self, polymer: Polymer) -> FragmentLibrary:
-        needed_triplets = self._extract_polymer_triplets(polymer)
-        logger.info(
-            "Polymer requires %d unique triplet contexts: %s",
-            len(needed_triplets),
-            sorted(needed_triplets),
-        )
-
-        residues = {spec.residue_id: spec.residue for spec in self.specs}
-        matrix = self.solver.solve(self.specs)
-        all_trimers = TrimerBuilder(residues=residues, matrix=matrix, cap=self.cap).build_all()
-
-        selected = self._select_trimers_for_triplets(all_trimers, needed_triplets)
-        logger.info("Selected %d trimers to parameterise.", len(selected))
-
-        trimer_pipeline = TrimerParameterisationPipeline(
-            specs=self.specs,
-            cap=self.cap,
-            solver=self.solver,
-            conformer_generator=self.conformer_generator,
-            charge_method=self.charge_method,
-        )
-        trimer_dir = self.output_dir / "trimers"
-        parameterised = trimer_pipeline.run_selected(selected, trimer_dir)
-
-        return FragmentLibraryBuilder().build(parameterised)
-
-    @staticmethod
-    def _extract_polymer_triplets(polymer: Polymer) -> set[tuple[str, str, str]]:
-        non_cap = [
-            r for r in polymer.residue_instances
-            if r.residue_type != ResidueType.CAP
-        ]
-        return {
-            (non_cap[i - 1].residue_id, non_cap[i].residue_id, non_cap[i + 1].residue_id)
-            for i in range(1, len(non_cap) - 1)
-        }
-
-    @staticmethod
-    def _select_trimers_for_triplets(
-        all_trimers: list[TrimerResult],
-        needed_triplets: set[tuple[str, str, str]],
-    ) -> list[TrimerResult]:
-        best: dict[tuple[str, str, str], TrimerResult] = {}
-        for trimer in all_trimers:
-            key = (trimer.left_id, trimer.central_id, trimer.right_id)
-            if key not in needed_triplets:
-                continue
-            existing = best.get(key)
-            if existing is None or trimer.probability > existing.probability:
-                best[key] = trimer
-        return list(best.values())
+        logger.info("PolymerFirstParameterisationPipeline complete.")
+        return ParameterisedMolecule(structure=structure, mol=mol_3d, source=gromacs_files), library
 
     def _build_polymer(self) -> Polymer:
         residues = {spec.residue_id: spec.residue for spec in self.specs}
@@ -152,30 +140,44 @@ class PolymerParameterisationPipeline:
         return builder.build(self.n, rng)
 
     @staticmethod
+    def _extract_triplets(polymer: Polymer) -> list[tuple[str, str, str]]:
+        """Sliding window of 3 over monomer residues.
+
+        Position i (interior): trimer is (i-1, i, i+1), centre is parameterised
+        from the interior fragment of that trimer.
+        Position 0 (terminal left): covered as LEFT of the first triplet.
+        Position n-1 (terminal right): covered as RIGHT of the last triplet.
+        """
+        monomers = [
+            inst for inst in polymer.residue_instances
+            if inst.residue_type == ResidueType.MONOMER
+        ]
+        seen: set[tuple[str, str, str]] = set()
+        triplets: list[tuple[str, str, str]] = []
+        for i in range(1, len(monomers) - 1):
+            triplet = (
+                monomers[i - 1].residue_id,
+                monomers[i].residue_id,
+                monomers[i + 1].residue_id,
+            )
+            if triplet not in seen:
+                seen.add(triplet)
+                triplets.append(triplet)
+        return triplets
+
+    @staticmethod
     def _build_polymer_atom_metadata(polymer: Polymer) -> dict[int, tuple[str, int]]:
         metadata: dict[int, tuple[str, int]] = {}
         for instance in polymer.residue_instances:
             if instance.residue_type == ResidueType.CAP:
                 continue
-            PolymerParameterisationPipeline._add_instance_metadata(polymer, instance, metadata)
+            heavy_indices = frozenset(
+                idx for idx in instance.atom_indices(polymer.mol)
+                if polymer.mol.GetAtomWithIdx(idx).GetAtomicNum() != 1
+            )
+            for position, idx in enumerate(sorted(heavy_indices)):
+                metadata[idx] = (instance.residue_id, position)
         return metadata
-
-    @staticmethod
-    def _add_instance_metadata(
-        polymer: Polymer,
-        instance,
-        metadata: dict[int, tuple[str, int]],
-    ) -> None:
-        heavy_indices = PolymerParameterisationPipeline._heavy_atom_indices(polymer, instance)
-        for position, idx in enumerate(sorted(heavy_indices)):
-            metadata[idx] = (instance.residue_id, position)
-
-    @staticmethod
-    def _heavy_atom_indices(polymer: Polymer, instance) -> frozenset[int]:
-        return frozenset(
-            idx for idx in instance.atom_indices(polymer.mol)
-            if polymer.mol.GetAtomWithIdx(idx).GetAtomicNum() != 1
-        )
 
     def _save_gromacs(self, structure: pmd.Structure) -> GromacsFiles:
         name = f"polymer_{self.n}mer"
@@ -190,12 +192,3 @@ class PolymerParameterisationPipeline:
         top.save(str(top_path), overwrite=True)
         top.save(str(itp_path), format="GROMACS", overwrite=True)
         return GromacsFiles(itp=itp_path, gro=gro_path, top=top_path)
-
-
-def adjust_charge_neutrality(structure: pmd.Structure) -> None:
-    total = sum(atom.charge for atom in structure.atoms)
-    if abs(total) < 1e-10:
-        return
-    per_atom = total / len(structure.atoms)
-    for atom in structure.atoms:
-        atom.charge -= per_atom

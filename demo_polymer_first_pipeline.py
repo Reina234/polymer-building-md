@@ -1,17 +1,22 @@
 """
-Demo: end-to-end pipeline for MMA/BA/MAA copolymer, with comparison against a
-reference GAFF2 parameterisation (tests/full_polymer_results/mmabamaa20).
+Demo: Polymer-first parameterisation pipeline for MMA/BA/MAA copolymer.
 
-Runs:
-  1. Polymer build — the pipeline determines which ABA trimers are needed from
-     the actual sequence, parameterises them (with file-level caching), and
-     builds the fragment library on the fly.
-  2. ParameterComparator between our output and the reference structure.
+Instead of pre-building a library from all possible trimers above a probability
+threshold, this approach:
+  1. Builds the polymer sequence first (no parameterisation yet).
+  2. Extracts the unique (left, centre, right) trimer environments that actually
+     appear in that specific polymer.
+  3. Parameterises only those trimers.
+  4. Builds the fragment library from those trimers.
+  5. Tiles parameters onto the polymer.
+
+This guarantees complete coverage for the polymer at hand and avoids
+parameterising trimers that never appear.
 
 Requires: OBabel and acpype installed on PATH.
 
 Usage:
-    python demo_mmabamaa_pipeline.py
+    python demo_polymer_first_pipeline.py
 """
 
 from __future__ import annotations
@@ -28,34 +33,30 @@ from polymer_md.building.data_models.monomer_spec import MonomerSpec
 from polymer_md.building.monomer_converter import MonomerToResidueConverter
 from polymer_md.core.monomer import Monomer
 from polymer_md.geometry.etkdg import ETKDGConformerGenerator
-from polymer_md.parameterisation.data_models.parameterised_mol import (
-    ParameterisedMolecule,
-)
+from polymer_md.parameterisation.data_models.parameterised_mol import ParameterisedMolecule
 from polymer_md.parameterisation.fragments.data_models.parameters import (
     AtomParameter,
     BondParameter,
 )
-from polymer_md.parameterisation.polymer_pipeline import PolymerParameterisationPipeline
-from polymer_md.parameterisation.strategies.residue_position import (
-    ResiduePositionStrategy,
+from polymer_md.parameterisation.polymer_first_pipeline import (
+    PolymerFirstParameterisationPipeline,
 )
+from polymer_md.parameterisation.strategies.residue_position import ResiduePositionStrategy
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)-8s %(name)s: %(message)s")
 
 REFERENCE_DIR = Path("tests/full_polymer_results/mmabamaa20")
-TRIMER_CACHE_DIR = Path("output/mmabamaa_polymer/trimers")
+OUTPUT_DIR = Path("output/mmabamaa_polymer_first")
 
 
 def _make_specs() -> list[MonomerSpec]:
-    mma = MonomerToResidueConverter.convert(
-        Monomer(smiles="C=C(C)C(=O)OC", label="MMA")
-    )
+    mma = MonomerToResidueConverter.convert(Monomer(smiles="C=C(C)C(=O)OC", label="MMA"))
     ba = MonomerToResidueConverter.convert(Monomer(smiles="C=CC(=O)OCCCC", label="BA"))
     maa = MonomerToResidueConverter.convert(Monomer(smiles="C=C(C)C(=O)O", label="MAA"))
     return [
-        MonomerSpec(residue=mma, weight=0.60, ht_fraction=1.0),
-        MonomerSpec(residue=ba, weight=0.20, ht_fraction=1.0),
-        MonomerSpec(residue=maa, weight=0.20, ht_fraction=1.0),
+        MonomerSpec(residue=mma, weight=0.60, ht_fraction=1),
+        MonomerSpec(residue=ba, weight=0.20, ht_fraction=1),
+        MonomerSpec(residue=maa, weight=0.20, ht_fraction=1),
     ]
 
 
@@ -86,26 +87,11 @@ def _load_reference() -> ParameterisedMolecule:
     return ParameterisedMolecule(structure=structure, mol=mol, source=None)
 
 
-def _build_polymer(specs: list[MonomerSpec]) -> ParameterisedMolecule:
-    pipeline = PolymerParameterisationPipeline(
-        specs=specs,
-        n=20,
-        output_dir=Path("output/mmabamaa_polymer"),
-        seed=42,
-        conformer_generator=ETKDGConformerGenerator(use_uff=False, use_random_coords=True),
-        missing_strategies={AtomParameter: ResiduePositionStrategy(min_matches=1)},
-        adjust_charge=True,
-        charge_method="bcc",
-    )
-    print("Building and parameterising 20-mer copolymer...")
-    return pipeline.run()
-
-
 def _run_comparison(
     our_mol: ParameterisedMolecule,
     reference_mol: ParameterisedMolecule,
 ) -> None:
-    print("\n=== Parameter Comparison: Our Pipeline vs. Reference ===\n")
+    print("\n=== Parameter Comparison: Polymer-First Pipeline vs. Reference ===\n")
 
     specs = [
         ExtractionSpec(
@@ -125,7 +111,7 @@ def _run_comparison(
 
     comparator = ParameterComparator(fragments=fragments)
     comparison = comparator.compare(
-        {"reference": reference_mol, "our_pipeline": our_mol}
+        {"reference": reference_mol, "polymer_first": our_mol}
     )
     summary = comparison.summarise()
 
@@ -134,21 +120,39 @@ def _run_comparison(
         for frag, param_map in frag_map.items():
             for param, s in param_map.items():
                 print(
-                    f"  {frag.pattern:20s} {param.name:25s}  mean={s.mean:8.4f}  std={s.std:7.4f}  n={s.count}"
+                    f"  {frag.pattern:20s} {param.name:25s}"
+                    f"  mean={s.mean:8.4f}  std={s.std:7.4f}  n={s.count}"
                 )
         print()
 
 
 def main() -> None:
-    print("=== MMA / BA / MAA Copolymer Pipeline Demo ===\n")
+    print("=== MMA / BA / MAA Copolymer — Polymer-First Pipeline Demo ===\n")
 
     specs = _make_specs()
 
-    our_mol = _build_polymer(specs)
+    pipeline = PolymerFirstParameterisationPipeline(
+        specs=specs,
+        n=20,
+        output_dir=OUTPUT_DIR,
+        seed=42,
+        conformer_generator=ETKDGConformerGenerator(
+            use_uff=False, use_random_coords=True
+        ),
+        missing_strategies={AtomParameter: ResiduePositionStrategy(min_matches=1)},
+        adjust_charge=True,
+        charge_method="bcc",
+    )
+
+    print("Running polymer-first pipeline (builds polymer, extracts needed trimers, tiles)...")
+    our_mol, library = pipeline.run()
+
     total_charge = sum(a.charge for a in our_mol.structure.atoms)
     print(
-        f"\nOur polymer: {len(our_mol.structure.atoms)} atoms, charge={total_charge:.4f}"
+        f"\nPolymer-first result: {len(our_mol.structure.atoms)} atoms, "
+        f"charge={total_charge:.4f}"
     )
+    print(f"  Library: {len(library.records)} records")
     print(f"  GRO: {our_mol.source.gro}")
     print(f"  TOP: {our_mol.source.top}")
 

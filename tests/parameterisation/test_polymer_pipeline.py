@@ -143,7 +143,14 @@ class TestPolymerPipelineRun:
                 MockTiler.return_value = mock_tiler_instance
 
                 # Patch _save_gromacs to avoid actual file I/O
-                with patch.object(PolymerParameterisationPipeline, "_save_gromacs") as mock_save:
+                with (
+                    patch.object(
+                        PolymerParameterisationPipeline,
+                        "_build_library_for_polymer",
+                        return_value=_empty_library(),
+                    ),
+                    patch.object(PolymerParameterisationPipeline, "_save_gromacs") as mock_save,
+                ):
                     from polymer_md.conversion.gromacs_files import GromacsFiles
                     gro = tmp / "p.gro"
                     top = tmp / "p.top"
@@ -153,7 +160,6 @@ class TestPolymerPipelineRun:
                     mock_save.return_value = GromacsFiles(itp=itp, gro=gro, top=top)
 
                     pipeline = PolymerParameterisationPipeline(
-                        library=_empty_library(),
                         specs=_specs(),
                         n=5,
                         output_dir=tmp,
@@ -167,7 +173,6 @@ class TestPolymerPipelineRun:
         from polymer_md.core.polymer import Polymer
 
         pipeline = PolymerParameterisationPipeline(
-            library=_empty_library(),
             specs=_specs(),
             n=3,
             output_dir=Path("/tmp/test_build_polymer_direct"),
@@ -187,7 +192,6 @@ class TestPolymerPipelineRun:
             structure.add_atom(atom, "MOL", 1)
 
             pipeline = PolymerParameterisationPipeline(
-                library=_empty_library(),
                 specs=_specs(),
                 n=3,
                 output_dir=tmp,
@@ -208,7 +212,7 @@ class TestPolymerPipelineRun:
             structure.add_atom(atom, "MOL", 1)
 
             pipeline = PolymerParameterisationPipeline(
-                library=_empty_library(), specs=_specs(), n=3, output_dir=tmp,
+                specs=_specs(), n=3, output_dir=tmp,
             )
             gromacs_files = pipeline._save_gromacs(structure)
             top_text = gromacs_files.top.read_text()
@@ -244,14 +248,18 @@ class TestPolymerPipelineRun:
                     f.write_text("")
                 mock_save.return_value = GromacsFiles(itp=itp, gro=gro, top=top)
 
-                pipeline = PolymerParameterisationPipeline(
-                    library=_empty_library(),
-                    specs=_specs(),
-                    n=3,
-                    output_dir=tmp,
-                    adjust_charge=False,
-                )
-                pipeline.run()
+                with patch.object(
+                    PolymerParameterisationPipeline,
+                    "_build_library_for_polymer",
+                    return_value=_empty_library(),
+                ):
+                    pipeline = PolymerParameterisationPipeline(
+                        specs=_specs(),
+                        n=3,
+                        output_dir=tmp,
+                        adjust_charge=False,
+                    )
+                    pipeline.run()
 
             mock_adj.assert_not_called()
 

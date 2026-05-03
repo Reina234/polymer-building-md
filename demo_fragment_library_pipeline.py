@@ -1,11 +1,18 @@
 """
-Demo: FragmentLibraryPipeline (Orchestrator 1)
+Demo: FragmentLibraryPipeline
 
-Builds a fragment parameter library from polystyrene trimers.
+Pre-builds a fragment parameter library for all polystyrene trimers above a
+probability threshold and saves it to disk for inspection.
+
+Note: For end-to-end polymer parameterisation you do not need to run this
+separately — PolymerParameterisationPipeline builds the library on-demand from
+the trimers required by the actual polymer sequence. This demo is useful for
+inspecting the library contents or pre-caching trimers.
+
 Requires: OBabel and acpype installed on PATH.
 
 Usage:
-    python demo_fragment_library_pipeline.py
+    conda run -n md_engines python demo_fragment_library_pipeline.py
 """
 import logging
 from pathlib import Path
@@ -30,7 +37,7 @@ def main() -> None:
         specs=specs,
         output_dir=Path("output/demo_library/trimers"),
         library_path=Path("output/demo_library/library.json"),
-        conformer_generator=ETKDGConformerGenerator(use_uff=False),
+        conformer_generator=ETKDGConformerGenerator(use_uff=False, use_random_coords=True),
         probability_threshold=0.0,
         charge_method="bcc",
     )
@@ -39,7 +46,6 @@ def main() -> None:
     library = pipeline.run()
 
     print(f"\nLibrary built: {len(library.records)} parameter records")
-    print(f"Unique fragment patterns: {len(set(h.fragment.pattern for r in library.records for h in r.hits))}")
     print(f"Atom metadata entries: {sum(len(m) for m in library.atom_metadata.values())}")
     print(f"\nLibrary saved to: {pipeline.library_path}")
 

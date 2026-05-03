@@ -141,24 +141,33 @@ class TrimerBuilder:
         self._assembler = _TrimerMolAssembler(cap)
 
     def build_all(self) -> list[TrimerResult]:
+        triplets = {
+            (left_id, central_id, right_id)
+            for central_id in self._residues
+            for left_id in self._residues
+            for right_id in self._residues
+        }
+        return self.build_for_triplets(triplets)
+
+    def build_for_triplets(
+        self, triplets: set[tuple[str, str, str]]
+    ) -> list[TrimerResult]:
         stationary = self._matrix.stationary_distribution()
         best: dict[str, TrimerResult] = {}
         total_prob: dict[str, float] = {}
 
-        for central_id in self._residues:
-            for left_id in self._residues:
-                for right_id in self._residues:
-                    for left_site in range(2):
-                        for k_site_left in range(2):
-                            for right_site in range(2):
-                                key, result = self._build_candidate(
-                                    left_id, central_id, right_id,
-                                    left_site, k_site_left, right_site,
-                                    stationary,
-                                )
-                                total_prob[key] = total_prob.get(key, 0.0) + result.probability
-                                if key not in best or result.probability > best[key].probability:
-                                    best[key] = result
+        for left_id, central_id, right_id in triplets:
+            for left_site in range(2):
+                for k_site_left in range(2):
+                    for right_site in range(2):
+                        key, result = self._build_candidate(
+                            left_id, central_id, right_id,
+                            left_site, k_site_left, right_site,
+                            stationary,
+                        )
+                        total_prob[key] = total_prob.get(key, 0.0) + result.probability
+                        if key not in best or result.probability > best[key].probability:
+                            best[key] = result
 
         return [
             dataclasses.replace(r, probability=total_prob[key])

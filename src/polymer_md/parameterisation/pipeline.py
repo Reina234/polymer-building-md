@@ -108,6 +108,26 @@ class TrimerParameterisationPipeline:
         logger.info("Transition matrix solved: %d sites.", matrix.n_sites)
         return matrix
 
+    def run_selected(
+        self, selected: list[TrimerResult], output_dir: Path
+    ) -> list[ParameterisedTrimer]:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        results = []
+        smiles_cache: dict[str, ParameterisedTrimer] = {}
+        for trimer in tqdm(selected, desc="Parameterising trimers", unit="trimer"):
+            smiles = RDKitHelper.canonical_smiles_stripped(trimer.mol)
+            if smiles in smiles_cache:
+                logger.info(
+                    "Skipping %s (duplicate canonical SMILES).", trimer.label
+                )
+                results.append(smiles_cache[smiles])
+                continue
+            logger.info("Parameterising %s", trimer.label)
+            parameterised = self._parameterise_trimer(trimer, output_dir)
+            smiles_cache[smiles] = parameterised
+            results.append(parameterised)
+        return results
+
     def _filter_by_probability(self, trimers: list[TrimerResult]) -> list[TrimerResult]:
         return [t for t in trimers if t.probability >= self.probability_threshold]
 

@@ -27,15 +27,30 @@ class RandomPolymerBuilder:
         self._validate_site_indices()
 
     def build(self, n: int, rng: np.random.Generator) -> Polymer:
+        polymer, _ = self.build_with_connections(n, rng)
+        return polymer
+
+    def build_with_connections(
+        self, n: int, rng: np.random.Generator
+    ) -> tuple[Polymer, list[tuple[int, int]]]:
+        """Returns (polymer, connections) where connections[i] = (from_site_index, to_site_index)
+        for the bond between monomer i and monomer i+1."""
         if n < 1:
             raise ValueError(f"n must be at least 1, got {n}")
-        polymer = AdditionPolymer()
+        ap = AdditionPolymer()
         initial_site = self._sample_initial_site(rng)
-        self._initialise(polymer, initial_site)
+        self._initialise(ap, initial_site)
         active_site = self._complement_site(initial_site)
+        connections: list[tuple[int, int]] = []
         for _ in range(n - 1):
-            active_site = self._grow_one(polymer, active_site, rng)
-        return polymer.export(self._cap)
+            next_site = self._matrix.sample_next(active_site, rng)
+            connections.append((active_site.site_index, next_site.site_index))
+            ap.add(
+                self._residues[next_site.residue_id],
+                site=self._to_map_label(next_site),
+            )
+            active_site = self._complement_site(next_site)
+        return ap.export(self._cap), connections
 
     def _initialise(self, polymer: AdditionPolymer, site: SiteKey) -> None:
         polymer.initialise(

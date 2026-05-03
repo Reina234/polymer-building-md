@@ -161,9 +161,8 @@ class TestPolymerPipelineIntegration:
         parameterised_trimers = _build_trimers(specs, tmp_path / "trimers")
         return FragmentLibraryBuilder().build(parameterised_trimers)
 
-    def test_polymer_pipeline_produces_parameterised_molecule(self, small_library, tmp_path):
-        result = PolymerParameterisationPipeline(
-            library=small_library,
+    def _run_pipeline(self, small_library: FragmentLibrary, tmp_path: Path) -> PolymerParameterisationPipeline:
+        pipeline = PolymerParameterisationPipeline(
             specs=_make_specs(),
             n=4,
             output_dir=tmp_path / "polymer",
@@ -171,55 +170,33 @@ class TestPolymerPipelineIntegration:
             conformer_generator=ETKDGConformerGenerator(),
             missing_strategies={AtomParameter: ResiduePositionStrategy(min_matches=1)},
             adjust_charge=True,
-        ).run()
+        )
+        with patch.object(
+            PolymerParameterisationPipeline,
+            "_build_library_for_polymer",
+            return_value=small_library,
+        ):
+            return pipeline.run()
 
+    def test_polymer_pipeline_produces_parameterised_molecule(self, small_library, tmp_path):
+        result = self._run_pipeline(small_library, tmp_path)
         assert len(result.structure.atoms) > 0
         assert len(result.structure.bonds) > 0
 
     def test_polymer_pipeline_all_bonds_have_nonzero_types(self, small_library, tmp_path):
-        result = PolymerParameterisationPipeline(
-            library=small_library,
-            specs=_make_specs(),
-            n=4,
-            output_dir=tmp_path / "polymer",
-            seed=42,
-            conformer_generator=ETKDGConformerGenerator(),
-            missing_strategies={AtomParameter: ResiduePositionStrategy(min_matches=1)},
-            adjust_charge=True,
-        ).run()
-
+        result = self._run_pipeline(small_library, tmp_path)
         for bond in result.structure.bonds:
             bt = ParmedTypeResolver.bond_type(bond)
             assert bt.k > 0
             assert bt.req > 0
 
     def test_polymer_pipeline_charge_is_neutral(self, small_library, tmp_path):
-        result = PolymerParameterisationPipeline(
-            library=small_library,
-            specs=_make_specs(),
-            n=4,
-            output_dir=tmp_path / "polymer",
-            seed=42,
-            conformer_generator=ETKDGConformerGenerator(),
-            missing_strategies={AtomParameter: ResiduePositionStrategy(min_matches=1)},
-            adjust_charge=True,
-        ).run()
-
+        result = self._run_pipeline(small_library, tmp_path)
         total_charge = sum(a.charge for a in result.structure.atoms)
         assert abs(total_charge) < 1e-3
 
     def test_polymer_pipeline_output_files_written(self, small_library, tmp_path):
-        result = PolymerParameterisationPipeline(
-            library=small_library,
-            specs=_make_specs(),
-            n=4,
-            output_dir=tmp_path / "polymer",
-            seed=42,
-            conformer_generator=ETKDGConformerGenerator(),
-            missing_strategies={AtomParameter: ResiduePositionStrategy(min_matches=1)},
-            adjust_charge=True,
-        ).run()
-
+        result = self._run_pipeline(small_library, tmp_path)
         assert result.source.gro.exists()
         assert result.source.top.exists()
         assert result.source.itp.exists()
