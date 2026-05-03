@@ -64,28 +64,22 @@ class PolymerFirstParameterisationPipeline:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info("Building %d-mer polymer sequence...", self.n)
-        polymer = self._build_polymer()
+        polymer, connections = self._build_polymer()
 
-        logger.info("Extracting unique trimer environments from polymer sequence...")
-        triplets = self._extract_triplets(polymer)
+        logger.info("Extracting unique oriented trimer environments from polymer sequence...")
+        oriented_triplets = self._extract_oriented_triplets(polymer, connections)
         logger.info(
-            "Found %d unique trimer environments: %s",
-            len(triplets),
-            triplets,
+            "Found %d unique oriented trimer environments.",
+            len(oriented_triplets),
         )
 
         logger.info("Building trimers for extracted environments...")
         residues = {spec.residue_id: spec.residue for spec in self.specs}
         matrix = self.solver.solve(self.specs)
-        all_trimers = TrimerBuilder(
+        trimers = TrimerBuilder(
             residues=residues, matrix=matrix, cap=self.cap
-        ).build_for_triplets(set(triplets))
-        trimers = [t for t in all_trimers if t.probability > 0]
-        logger.info(
-            "Built %d unique trimers (%d with zero probability dropped).",
-            len(trimers),
-            len(all_trimers) - len(trimers),
-        )
+        ).build_for_oriented_triplets(oriented_triplets)
+        logger.info("Built %d unique trimers.", len(trimers))
 
         logger.info("Parameterising trimers...")
         trimer_pipeline = TrimerParameterisationPipeline(
@@ -109,7 +103,7 @@ class PolymerFirstParameterisationPipeline:
         structure = TopologyBuilder.build(mol_3d)
 
         logger.info("Deriving RDKit mol from parmed structure...")
-        derived_mol = StructureMolDeriver.derive(structure)
+        derived_mol = StructureMolDeriver.derive(structure, mol_3d)
 
         logger.info("Building polymer atom metadata...")
         polymer_atom_metadata = self._build_polymer_atom_metadata(polymer)
@@ -132,38 +126,32 @@ class PolymerFirstParameterisationPipeline:
         logger.info("PolymerFirstParameterisationPipeline complete.")
         return ParameterisedMolecule(structure=structure, mol=mol_3d, source=gromacs_files), library
 
-    def _build_polymer(self) -> Polymer:
+    def _build_polymer(self) -> tuple[Polymer, list[tuple[int, int]]]:
         residues = {spec.residue_id: spec.residue for spec in self.specs}
         matrix = self.solver.solve(self.specs)
         builder = RandomPolymerBuilder(residues=residues, matrix=matrix, cap=self.cap)
         rng = np.random.default_rng(self.seed)
-        return builder.build(self.n, rng)
+        return builder.build_with_connections(self.n, rng)
 
     @staticmethod
-    def _extract_triplets(polymer: Polymer) -> list[tuple[str, str, str]]:
-        """Sliding window of 3 over monomer residues.
-
-        Position i (interior): trimer is (i-1, i, i+1), centre is parameterised
-        from the interior fragment of that trimer.
-        Position 0 (terminal left): covered as LEFT of the first triplet.
-        Position n-1 (terminal right): covered as RIGHT of the last triplet.
-        """
-        monomers = [
-            inst for inst in polymer.residue_instances
-            if inst.residue_type == ResidueType.MONOMER
+    def _extract_oriented_triplets(
+        polymer: Polymer,
+        connections: list[tuple[int, int]],
+    ) -> set[tuple[str, int, str, int, str, int]]:
+        non_cap = [
+            r for r in polymer.residue_instances
+            if r.residue_type == ResidueType.MONOMER
         ]
-        seen: set[tuple[str, str, str]] = set()
-        triplets: list[tuple[str, str, str]] = []
-        for i in range(1, len(monomers) - 1):
-            triplet = (
-                monomers[i - 1].residue_id,
-                monomers[i].residue_id,
-                monomers[i + 1].residue_id,
-            )
-            if triplet not in seen:
-                seen.add(triplet)
-                triplets.append(triplet)
-        return triplets
+        oriented: set[tuple[str, int, str, int, str, int]] = set()
+        for i in range(1, len(non_cap) - 1):
+            left_site, k_site_left = connections[i - 1]
+            right_site = connections[i][1]
+            oriented.add((
+                non_cap[i - 1].residue_id, left_site,
+                non_cap[i].residue_id, k_site_left,
+                non_cap[i + 1].residue_id, right_site,
+            ))
+        return oriented
 
     @staticmethod
     def _build_polymer_atom_metadata(polymer: Polymer) -> dict[int, tuple[str, int]]:

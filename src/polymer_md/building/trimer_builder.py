@@ -140,6 +140,27 @@ class TrimerBuilder:
         self._matrix = matrix
         self._assembler = _TrimerMolAssembler(cap)
 
+    def build_for_oriented_triplets(
+        self,
+        oriented_triplets: set[tuple[str, int, str, int, str, int]],
+    ) -> list[TrimerResult]:
+        """Build trimers for exact (left_id, left_site, central_id, k_site_left, right_id, right_site) tuples.
+
+        Deduplicates by canonical SMILES so two orientations that yield the same molecule
+        produce only one trimer.
+        """
+        stationary = self._matrix.stationary_distribution()
+        seen: dict[str, TrimerResult] = {}
+        for left_id, left_site, central_id, k_site_left, right_id, right_site in oriented_triplets:
+            key, result = self._build_candidate(
+                left_id, central_id, right_id,
+                left_site, k_site_left, right_site,
+                stationary,
+            )
+            if key not in seen:
+                seen[key] = result
+        return list(seen.values())
+
     def build_all(self) -> list[TrimerResult]:
         triplets = {
             (left_id, central_id, right_id)

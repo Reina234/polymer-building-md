@@ -8,12 +8,9 @@ import numpy as np
 import parmed as pmd
 
 from polymer_md.building.data_models.monomer_spec import MonomerSpec
-from polymer_md.building.data_models.residue import AdditionPolymerResidue
-from polymer_md.building.data_models.trimer import TrimerResult
 from polymer_md.building.solvers.base import TransitionMatrixSolver
 from polymer_md.building.solvers.proportional import ProportionalSolver
 from polymer_md.building.trimer_builder import TrimerBuilder
-from polymer_md.building.monomer_converter import MonomerToResidueConverter
 from polymer_md.building.random_polymer import RandomPolymerBuilder
 from parmed.gromacs import GromacsTopologyFile
 
@@ -56,10 +53,10 @@ class PolymerParameterisationPipeline:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         logger.info("Building %d-mer polymer...", self.n)
-        polymer = self._build_polymer()
+        polymer, connections = self._build_polymer()
 
         logger.info("Building fragment library from polymer contexts...")
-        library = self._build_library_for_polymer(polymer)
+        library = self._build_library_for_polymer(polymer, connections)
 
         logger.info("Embedding 3D conformer...")
         mol_3d = self.conformer_generator.embed(polymer.mol)
@@ -68,7 +65,7 @@ class PolymerParameterisationPipeline:
         structure = TopologyBuilder.build(mol_3d)
 
         logger.info("Deriving RDKit mol from parmed structure...")
-        derived_mol = StructureMolDeriver.derive(structure)
+        derived_mol = StructureMolDeriver.derive(structure, mol_3d)
 
         logger.info("Building polymer atom metadata...")
         polymer_atom_metadata = self._build_polymer_atom_metadata(polymer)
@@ -91,19 +88,22 @@ class PolymerParameterisationPipeline:
         logger.info("PolymerParameterisationPipeline complete.")
         return ParameterisedMolecule(structure=structure, mol=mol_3d, source=gromacs_files)
 
-    def _build_library_for_polymer(self, polymer: Polymer) -> FragmentLibrary:
-        needed_triplets = self._extract_polymer_triplets(polymer)
+    def _build_library_for_polymer(
+        self,
+        polymer: Polymer,
+        connections: list[tuple[int, int]],
+    ) -> FragmentLibrary:
+        oriented_triplets = self._extract_oriented_triplets(polymer, connections)
         logger.info(
-            "Polymer requires %d unique triplet contexts: %s",
-            len(needed_triplets),
-            sorted(needed_triplets),
+            "Polymer requires %d unique oriented triplet contexts.",
+            len(oriented_triplets),
         )
 
         residues = {spec.residue_id: spec.residue for spec in self.specs}
         matrix = self.solver.solve(self.specs)
-        all_trimers = TrimerBuilder(residues=residues, matrix=matrix, cap=self.cap).build_all()
-
-        selected = self._select_trimers_for_triplets(all_trimers, needed_triplets)
+        selected = TrimerBuilder(
+            residues=residues, matrix=matrix, cap=self.cap
+        ).build_for_oriented_triplets(oriented_triplets)
         logger.info("Selected %d trimers to parameterise.", len(selected))
 
         trimer_pipeline = TrimerParameterisationPipeline(
@@ -119,37 +119,31 @@ class PolymerParameterisationPipeline:
         return FragmentLibraryBuilder().build(parameterised)
 
     @staticmethod
-    def _extract_polymer_triplets(polymer: Polymer) -> set[tuple[str, str, str]]:
+    def _extract_oriented_triplets(
+        polymer: Polymer,
+        connections: list[tuple[int, int]],
+    ) -> set[tuple[str, int, str, int, str, int]]:
         non_cap = [
             r for r in polymer.residue_instances
             if r.residue_type != ResidueType.CAP
         ]
-        return {
-            (non_cap[i - 1].residue_id, non_cap[i].residue_id, non_cap[i + 1].residue_id)
-            for i in range(1, len(non_cap) - 1)
-        }
+        oriented: set[tuple[str, int, str, int, str, int]] = set()
+        for i in range(1, len(non_cap) - 1):
+            left_site, k_site_left = connections[i - 1]
+            right_site = connections[i][1]
+            oriented.add((
+                non_cap[i - 1].residue_id, left_site,
+                non_cap[i].residue_id, k_site_left,
+                non_cap[i + 1].residue_id, right_site,
+            ))
+        return oriented
 
-    @staticmethod
-    def _select_trimers_for_triplets(
-        all_trimers: list[TrimerResult],
-        needed_triplets: set[tuple[str, str, str]],
-    ) -> list[TrimerResult]:
-        best: dict[tuple[str, str, str], TrimerResult] = {}
-        for trimer in all_trimers:
-            key = (trimer.left_id, trimer.central_id, trimer.right_id)
-            if key not in needed_triplets:
-                continue
-            existing = best.get(key)
-            if existing is None or trimer.probability > existing.probability:
-                best[key] = trimer
-        return list(best.values())
-
-    def _build_polymer(self) -> Polymer:
+    def _build_polymer(self) -> tuple[Polymer, list[tuple[int, int]]]:
         residues = {spec.residue_id: spec.residue for spec in self.specs}
         matrix = self.solver.solve(self.specs)
         builder = RandomPolymerBuilder(residues=residues, matrix=matrix, cap=self.cap)
         rng = np.random.default_rng(self.seed)
-        return builder.build(self.n, rng)
+        return builder.build_with_connections(self.n, rng)
 
     @staticmethod
     def _build_polymer_atom_metadata(polymer: Polymer) -> dict[int, tuple[str, int]]:

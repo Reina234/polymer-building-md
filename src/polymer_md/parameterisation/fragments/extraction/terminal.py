@@ -12,7 +12,7 @@ from polymer_md.utils.parmed_helper import CoordinateCrosswalk, StructureMolDeri
 @dataclass
 class TerminalFragmentExtractor:
     def extract(self, parameterised_trimer: ParameterisedTrimer) -> list[tuple[Fragment, dict[int, int]]]:
-        derived_mol = StructureMolDeriver.derive(parameterised_trimer.structure)
+        derived_mol = StructureMolDeriver.derive(parameterised_trimer.structure, parameterised_trimer.mol_3d)
         mol3d_to_parmed = CoordinateCrosswalk.map_mol3d_to_parmed(
             parameterised_trimer.mol_3d,
             parameterised_trimer.structure,
@@ -45,41 +45,20 @@ class TerminalFragmentExtractor:
             cap_indices, left_indices, right_indices, parameterised_trimer.structure
         )
 
-        results = [
+        return [
             extractor.extract(
                 derived_mol=derived_mol,
                 structure=parameterised_trimer.structure,
-                context_parmed_indices=left_indices | left_cap,
-                region_parmed_indices=left_indices,
+                context_parmed_indices=left_cap | left_indices | central_indices,
+                region_parmed_indices=left_cap | left_indices,
             ),
             extractor.extract(
                 derived_mol=derived_mol,
                 structure=parameterised_trimer.structure,
-                context_parmed_indices=right_indices | right_cap,
-                region_parmed_indices=right_indices,
+                context_parmed_indices=central_indices | right_indices | right_cap,
+                region_parmed_indices=right_indices | right_cap,
             ),
         ]
-
-        if left_cap:
-            results.append(
-                extractor.extract(
-                    derived_mol=derived_mol,
-                    structure=parameterised_trimer.structure,
-                    context_parmed_indices=left_cap | left_indices,
-                    region_parmed_indices=left_cap,
-                )
-            )
-        if right_cap:
-            results.append(
-                extractor.extract(
-                    derived_mol=derived_mol,
-                    structure=parameterised_trimer.structure,
-                    context_parmed_indices=right_cap | right_indices,
-                    region_parmed_indices=right_cap,
-                )
-            )
-
-        return results
 
     @staticmethod
     def _split_caps_by_adjacency(

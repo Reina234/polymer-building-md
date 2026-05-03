@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
@@ -10,7 +11,16 @@ from polymer_md.building.data_models.transition_matrix import SiteKey, Transitio
 from polymer_md.building.solvers.base import TransitionMatrixSolver
 
 
+@dataclass
 class ProportionalSolver(TransitionMatrixSolver):
+    ht_fraction: float = 0.95
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.ht_fraction <= 1.0:
+            raise ValueError(
+                f"ht_fraction must be between 0 and 1, got {self.ht_fraction}"
+            )
+
     def solve(
         self,
         specs: list[MonomerSpec],
@@ -32,9 +42,9 @@ class ProportionalSolver(TransitionMatrixSolver):
         for spec in specs:
             base = spec.weight / total_weight
             site_probability[SiteKey.head(spec.residue_id)] = base * (
-                1.0 - spec.ht_fraction
+                1.0 - self.ht_fraction
             )
-            site_probability[SiteKey.tail(spec.residue_id)] = base * spec.ht_fraction
+            site_probability[SiteKey.tail(spec.residue_id)] = base * self.ht_fraction
 
         n_total_sites = len(site_keys)
         weights = np.array(

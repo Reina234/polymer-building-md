@@ -31,6 +31,7 @@ from polymer_md.analysis.comparator import ParameterComparator
 from polymer_md.analysis.extraction_spec import ExtractionSpec
 from polymer_md.building.data_models.monomer_spec import MonomerSpec
 from polymer_md.building.monomer_converter import MonomerToResidueConverter
+from polymer_md.building.solvers.proportional import ProportionalSolver
 from polymer_md.core.monomer import Monomer
 from polymer_md.geometry.etkdg import ETKDGConformerGenerator
 from polymer_md.parameterisation.data_models.parameterised_mol import ParameterisedMolecule
@@ -54,9 +55,9 @@ def _make_specs() -> list[MonomerSpec]:
     ba = MonomerToResidueConverter.convert(Monomer(smiles="C=CC(=O)OCCCC", label="BA"))
     maa = MonomerToResidueConverter.convert(Monomer(smiles="C=C(C)C(=O)O", label="MAA"))
     return [
-        MonomerSpec(residue=mma, weight=0.60, ht_fraction=1),
-        MonomerSpec(residue=ba, weight=0.20, ht_fraction=1),
-        MonomerSpec(residue=maa, weight=0.20, ht_fraction=1),
+        MonomerSpec(residue=mma, weight=0.60),
+        MonomerSpec(residue=ba, weight=0.20),
+        MonomerSpec(residue=maa, weight=0.20),
     ]
 
 
@@ -136,6 +137,7 @@ def main() -> None:
         n=20,
         output_dir=OUTPUT_DIR,
         seed=42,
+        solver=ProportionalSolver(ht_fraction=1.0),
         conformer_generator=ETKDGConformerGenerator(
             use_uff=False, use_random_coords=True
         ),

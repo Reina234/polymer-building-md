@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
@@ -15,7 +16,16 @@ from polymer_md.building.data_models.transition_matrix import SiteKey, Transitio
 from polymer_md.building.solvers.base import TransitionMatrixSolver
 
 
+@dataclass
 class ScipySolver(TransitionMatrixSolver):
+    ht_fraction: float = 0.95
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.ht_fraction <= 1.0:
+            raise ValueError(
+                f"ht_fraction must be between 0 and 1, got {self.ht_fraction}"
+            )
+
     def solve(
         self,
         specs: list[MonomerSpec],
@@ -64,14 +74,13 @@ class ScipySolver(TransitionMatrixSolver):
             site_keys.append(SiteKey.tail(spec.residue_id))
         return site_keys
 
-    @staticmethod
-    def _build_stationary_distribution(specs: list[MonomerSpec]) -> np.ndarray:
+    def _build_stationary_distribution(self, specs: list[MonomerSpec]) -> np.ndarray:
         total_weight = sum(spec.weight for spec in specs)
         stationary_dist: list[float] = []
         for spec in specs:
             base = spec.weight / total_weight
-            stationary_dist.append(base * (1.0 - spec.ht_fraction))
-            stationary_dist.append(base * spec.ht_fraction)
+            stationary_dist.append(base * (1.0 - self.ht_fraction))
+            stationary_dist.append(base * self.ht_fraction)
         return np.array(stationary_dist)
 
     @staticmethod

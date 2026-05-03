@@ -54,7 +54,7 @@ class TestParameterComparatorExtract:
         fragment = spec.to_fragment()
         comparator = ParameterComparator(fragments=[fragment])
 
-        result = comparator.extract(structure)
+        result = comparator.extract(structure, mol)
 
         assert fragment in result
 
@@ -64,7 +64,7 @@ class TestParameterComparatorExtract:
         fragment = spec.to_fragment()
         comparator = ParameterComparator(fragments=[fragment])
 
-        result = comparator.extract(structure)
+        result = comparator.extract(structure, mol)
         values = result.get(fragment, {}).get(AtomParameter.CHARGE, [])
 
         assert len(values) > 0
@@ -76,41 +76,41 @@ class TestParameterComparatorExtract:
         fragment = spec.to_fragment()
         comparator = ParameterComparator(fragments=[fragment])
 
-        result = comparator.extract(structure)
+        result = comparator.extract(structure, mol)
         values = result.get(fragment, {}).get(BondParameter.FORCE_CONSTANT, [])
 
         assert len(values) > 0
         assert all(pytest.approx(v, abs=1e-6) == 300.0 for v in values)
 
     def test_invalid_pattern_returns_empty_for_fragment(self, parameterised_propane):
-        structure, _ = parameterised_propane
+        structure, mol = parameterised_propane
         from polymer_md.parameterisation.fragments.data_models.fragment import Fragment
         fragment = Fragment(pattern="[#99]")
         comparator = ParameterComparator(fragments=[fragment])
 
-        result = comparator.extract(structure)
+        result = comparator.extract(structure, mol)
 
         assert result[fragment] == {}
 
     def test_multiple_fragments_all_present(self, parameterised_propane):
-        structure, _ = parameterised_propane
+        structure, mol = parameterised_propane
         spec1 = ExtractionSpec(pattern="[#6;A]", parameters=(AtomParameter.CHARGE,))
         spec2 = ExtractionSpec(pattern="[#6;A]-[#6;A]", parameters=(BondParameter.FORCE_CONSTANT,))
         f1 = spec1.to_fragment()
         f2 = spec2.to_fragment()
         comparator = ParameterComparator(fragments=[f1, f2])
 
-        result = comparator.extract(structure)
+        result = comparator.extract(structure, mol)
 
         assert f1 in result
         assert f2 in result
 
     def test_invalid_smarts_pattern_returns_empty_dict(self, parameterised_propane):
-        structure, _ = parameterised_propane
+        structure, mol = parameterised_propane
         fragment = Fragment(pattern="[invalid!!!")
         comparator = ParameterComparator(fragments=[fragment])
 
-        result = comparator.extract(structure)
+        result = comparator.extract(structure, mol)
 
         assert result[fragment] == {}
 
@@ -124,7 +124,7 @@ class TestParameterComparatorExtract:
         fragment = spec.to_fragment()
         comparator = ParameterComparator(fragments=[fragment])
 
-        result = comparator.extract(structure)
+        result = comparator.extract(structure, mol)
 
         assert BondParameter.FORCE_CONSTANT not in result.get(fragment, {})
 

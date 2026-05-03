@@ -35,6 +35,7 @@ from polymer_md.parameterisation.fragments.data_models.parameters import (
     AtomParameter,
     BondParameter,
 )
+from polymer_md.building.solvers.proportional import ProportionalSolver
 from polymer_md.parameterisation.polymer_pipeline import PolymerParameterisationPipeline
 from polymer_md.parameterisation.strategies.residue_position import (
     ResiduePositionStrategy,
@@ -53,9 +54,9 @@ def _make_specs() -> list[MonomerSpec]:
     ba = MonomerToResidueConverter.convert(Monomer(smiles="C=CC(=O)OCCCC", label="BA"))
     maa = MonomerToResidueConverter.convert(Monomer(smiles="C=C(C)C(=O)O", label="MAA"))
     return [
-        MonomerSpec(residue=mma, weight=0.60, ht_fraction=1.0),
-        MonomerSpec(residue=ba, weight=0.20, ht_fraction=1.0),
-        MonomerSpec(residue=maa, weight=0.20, ht_fraction=1.0),
+        MonomerSpec(residue=mma, weight=0.60),
+        MonomerSpec(residue=ba, weight=0.20),
+        MonomerSpec(residue=maa, weight=0.20),
     ]
 
 
@@ -92,6 +93,7 @@ def _build_polymer(specs: list[MonomerSpec]) -> ParameterisedMolecule:
         n=20,
         output_dir=Path("output/mmabamaa_polymer"),
         seed=42,
+        solver=ProportionalSolver(ht_fraction=1.0),
         conformer_generator=ETKDGConformerGenerator(use_uff=False, use_random_coords=True),
         missing_strategies={AtomParameter: ResiduePositionStrategy(min_matches=1)},
         adjust_charge=True,

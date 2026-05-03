@@ -126,7 +126,7 @@ class TestPolymerPipelineRun:
             mock_polymer.residue_instances = []
 
             with (
-                patch.object(PolymerParameterisationPipeline, "_build_polymer", return_value=mock_polymer),
+                patch.object(PolymerParameterisationPipeline, "_build_polymer", return_value=(mock_polymer, [])),
                 patch("polymer_md.parameterisation.polymer_pipeline.ETKDGConformerGenerator") as MockConformer,
                 patch("polymer_md.parameterisation.polymer_pipeline.TopologyBuilder") as MockTB,
                 patch("polymer_md.parameterisation.polymer_pipeline.StructureMolDeriver") as MockDeriv,
@@ -177,8 +177,9 @@ class TestPolymerPipelineRun:
             n=3,
             output_dir=Path("/tmp/test_build_polymer_direct"),
         )
-        polymer = pipeline._build_polymer()
+        polymer, connections = pipeline._build_polymer()
         assert isinstance(polymer, Polymer)
+        assert isinstance(connections, list)
 
     def test_save_gromacs_creates_output_files(self):
         import tempfile
@@ -229,7 +230,7 @@ class TestPolymerPipelineRun:
             mock_polymer.residue_instances = []
 
             with (
-                patch.object(PolymerParameterisationPipeline, "_build_polymer", return_value=mock_polymer),
+                patch.object(PolymerParameterisationPipeline, "_build_polymer", return_value=(mock_polymer, [])),
                 patch("polymer_md.parameterisation.polymer_pipeline.ETKDGConformerGenerator"),
                 patch("polymer_md.parameterisation.polymer_pipeline.TopologyBuilder") as MockTB,
                 patch("polymer_md.parameterisation.polymer_pipeline.StructureMolDeriver") as MockDeriv,

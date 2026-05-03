@@ -13,15 +13,14 @@ from polymer_md.parameterisation.data_models.parameterised_mol import Parameteri
 from polymer_md.parameterisation.fragments.data_models.annotated_members import AnnotatedAtom
 from polymer_md.parameterisation.fragments.data_models.fragment import Fragment
 from polymer_md.parameterisation.fragments.matching.matcher import FragmentMatcher
-from polymer_md.utils.parmed_helper import StructureMolDeriver
 
 
 @dataclass
 class ParameterComparator:
     fragments: list[Fragment]
 
-    def extract(self, structure: pmd.Structure, mol: Chem.Mol | None = None) -> AnalysisResult:
-        derived_mol = mol if mol is not None else StructureMolDeriver.derive(structure)
+    def extract(self, structure: pmd.Structure, mol: Chem.Mol) -> AnalysisResult:
+        derived_mol = mol
         result: AnalysisResult = {}
         for fragment in self.fragments:
             result[fragment] = self._extract_fragment(fragment, structure, derived_mol)
