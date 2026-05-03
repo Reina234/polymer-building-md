@@ -124,7 +124,12 @@ class PolymerFirstParameterisationPipeline:
         gromacs_files = self._save_gromacs(structure)
 
         logger.info("PolymerFirstParameterisationPipeline complete.")
-        return ParameterisedMolecule(structure=structure, mol=mol_3d, source=gromacs_files), library
+        return ParameterisedMolecule(
+            structure=structure,
+            mol=mol_3d,
+            source=gromacs_files,
+            atom_metadata=polymer_atom_metadata,
+        ), library
 
     def _build_polymer(self) -> tuple[Polymer, list[tuple[int, int]]]:
         residues = {spec.residue_id: spec.residue for spec in self.specs}

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import parmed as pmd
 from rdkit import Chem
@@ -13,6 +13,7 @@ class ParameterisedMolecule:
     structure: pmd.Structure
     mol: Chem.Mol
     source: GromacsFiles
+    atom_metadata: dict[int, tuple[str, int]] = field(default_factory=dict, compare=False, hash=False)
 
     @classmethod
     def from_gromacs_files(cls, files: GromacsFiles, mol: Chem.Mol) -> ParameterisedMolecule:

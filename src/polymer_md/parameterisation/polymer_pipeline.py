@@ -86,7 +86,12 @@ class PolymerParameterisationPipeline:
         gromacs_files = self._save_gromacs(structure)
 
         logger.info("PolymerParameterisationPipeline complete.")
-        return ParameterisedMolecule(structure=structure, mol=mol_3d, source=gromacs_files)
+        return ParameterisedMolecule(
+            structure=structure,
+            mol=mol_3d,
+            source=gromacs_files,
+            atom_metadata=polymer_atom_metadata,
+        )
 
     def _build_library_for_polymer(
         self,

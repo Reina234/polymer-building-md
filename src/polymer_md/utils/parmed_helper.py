@@ -6,6 +6,20 @@ from parmed.topologyobjects import DihedralTypeList
 from rdkit import Chem
 
 
+def mol_from_structure(structure: pmd.Structure) -> Chem.Mol:
+    """Build a bare RDKit mol from parmed atom/bond topology (no 3D coords needed)."""
+    edit = Chem.RWMol()
+    for atom in structure.atoms:
+        edit.AddAtom(Chem.Atom(atom.atomic_number))
+    for bond in structure.bonds:
+        edit.AddBond(bond.atom1.idx, bond.atom2.idx, Chem.BondType.SINGLE)
+    try:
+        Chem.SanitizeMol(edit)
+    except Chem.rdchem.MolSanitizeException:
+        pass
+    return edit.GetMol()
+
+
 class StructureMolDeriver:
     @staticmethod
     def derive(structure: pmd.Structure, mol_3d: Chem.Mol) -> Chem.Mol:

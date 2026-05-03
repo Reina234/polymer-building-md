@@ -1,5 +1,5 @@
 """
-Compare force-field parameters across two polymers and write a text report.
+Compare our PMMA20 pipeline output against the reference PMMA20 force field.
 
 Shows the full study workflow: build → compare → save results → write report → plot.
 
@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import parmed as pmd
+
 from polymer_md.analysis.comparator import ParameterComparator
 from polymer_md.analysis.extraction_spec import ExtractionSpec
 from polymer_md.analysis.report import TextReport
@@ -18,31 +20,47 @@ from polymer_md.building.monomer_converter import MonomerToResidueConverter
 from polymer_md.building.solvers.proportional import ProportionalSolver
 from polymer_md.core.monomer import Monomer
 from polymer_md.geometry.etkdg import ETKDGConformerGenerator
+from polymer_md.parameterisation.data_models.parameterised_mol import ParameterisedMolecule
 from polymer_md.parameterisation.fragments.data_models.parameters import AtomParameter, BondParameter
 from polymer_md.parameterisation.polymer_pipeline import PolymerParameterisationPipeline
 from polymer_md.parameterisation.strategies.residue_position import ResiduePositionStrategy
+from polymer_md.utils.parmed_helper import mol_from_structure
 
-OUTPUT_DIR = Path("output/comparison_study")
+OUTPUT_DIR = Path("output/comparison_pmma20")
+REFERENCE_ITP = Path("tests/full_polymer_results/pmma20_dpnb_4wt/PMMA20_GMX.itp")
 
 
-def make_pipeline(seed: int) -> PolymerParameterisationPipeline:
+def build_pipeline() -> PolymerParameterisationPipeline:
     specs = [
         MonomerSpec(
-            residue=MonomerToResidueConverter.convert(Monomer(smiles="C=Cc1ccccc1", label="S")),
+            residue=MonomerToResidueConverter.convert(Monomer(smiles="C=C(C)C(=O)OC", label="MMA")),
             weight=1.0,
         ),
     ]
     return PolymerParameterisationPipeline(
         specs=specs,
-        n=8,
-        output_dir=OUTPUT_DIR / f"seed_{seed}",
-        seed=seed,
-        solver=ProportionalSolver(ht_fraction=0.95),
+        n=20,
+        output_dir=OUTPUT_DIR / "pipeline",
+        seed=42,
+        solver=ProportionalSolver(ht_fraction=1.0),
         conformer_generator=ETKDGConformerGenerator(use_uff=False, use_random_coords=True),
         missing_strategies={AtomParameter: ResiduePositionStrategy(min_matches=1)},
         adjust_charge=True,
         charge_method="bcc",
     )
+
+
+def load_reference() -> ParameterisedMolecule:
+    ref_dir = REFERENCE_ITP.parent
+    from polymer_md.conversion.gromacs_files import GromacsFiles
+    source = GromacsFiles(
+        itp=REFERENCE_ITP,
+        gro=ref_dir / "pmma20_dpnb4_init.gro",
+        top=ref_dir / "topol.top",
+    )
+    structure = pmd.load_file(str(REFERENCE_ITP))
+    mol = mol_from_structure(structure)
+    return ParameterisedMolecule(structure=structure, mol=mol, source=source)
 
 
 fragments = [
@@ -56,9 +74,12 @@ fragments = [
     ).to_fragment(),
 ]
 
+our_polymer = build_pipeline().run()
+reference = load_reference()
+
 molecules = {
-    "seed_1": make_pipeline(seed=1).run(),
-    "seed_2": make_pipeline(seed=2).run(),
+    "our_pipeline": our_polymer,
+    "reference": reference,
 }
 
 comparison = ParameterComparator(fragments=fragments).compare(molecules)
