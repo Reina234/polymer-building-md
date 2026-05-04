@@ -60,11 +60,12 @@ class PolymerParameterisationTiler:
         assignments = self._collect_assignments(derived_mol)
         gaff2_types = self._collect_gaff2_types(derived_mol)
         missing: list[str] = []
-        self._apply_atoms(structure, assignments, gaff2_types, context)
+        self._apply_atoms(structure, assignments, gaff2_types, context, missing)
         self._apply_bonds(structure, assignments, context, missing)
         self._apply_angles(structure, assignments, context, missing)
         self._apply_dihedrals(structure, assignments, context, missing)
         self._apply_impropers(structure, assignments, context)
+        self._infer_hydrogen_types(structure)
         if missing:
             raise MissingParameterError(
                 f"{len(missing)} unresolved parameter(s):\n" + "\n".join(missing)
@@ -88,8 +89,8 @@ class PolymerParameterisationTiler:
                     assignments.setdefault(key, []).extend(values)
         return assignments
 
-    def _collect_gaff2_types(self, derived_mol: Chem.Mol) -> dict[int, str]:
-        gaff2_types: dict[int, str] = {}
+    def _collect_gaff2_types(self, derived_mol: Chem.Mol) -> dict[int, list[str]]:
+        gaff2_types: dict[int, list[str]] = {}
         for pattern, local_map in self.library.atom_metadata.items():
             query = Chem.MolFromSmarts(pattern)
             if query is None:
@@ -98,35 +99,92 @@ class PolymerParameterisationTiler:
                 for local_idx, meta in local_map.items():
                     if local_idx < len(rdkit_match) and meta.gaff2_type:
                         global_idx = rdkit_match[local_idx]
-                        gaff2_types.setdefault(global_idx, meta.gaff2_type)
+                        gaff2_types.setdefault(global_idx, []).append(meta.gaff2_type)
         return gaff2_types
 
     def _apply_atoms(
         self,
         structure: pmd.Structure,
         assignments: dict,
-        gaff2_types: dict[int, str],
+        gaff2_types: dict[int, list[str]],
         context: StrategyContext,
+        missing: list[str],
     ) -> None:
         for atom in structure.atoms:
+            is_polymer_atom = (
+                atom.idx in context.polymer_atom_metadata
+                or self._is_polymer_hydrogen(atom, context.polymer_atom_metadata)
+            )
             for parameter in AtomParameter:
                 key = ((atom.idx,), parameter)
                 values = assignments.get(key, [])
-                if not values and atom.idx not in context.polymer_atom_metadata:
+                if not values and not is_polymer_atom:
                     logger.warning(
-                        "Atom %d (%s) has no library match and no residue metadata; "
-                        "keeping default value for %s.",
-                        atom.idx,
-                        atom.name,
-                        parameter,
+                        "Cap atom %d (%s) has no library match; keeping default %s.",
+                        atom.idx, atom.name, parameter,
                     )
                     continue
-                atom_missing: list[str] = []
-                value = self._resolve_or_missing((atom.idx,), parameter, values, context, atom_missing)
+                value = self._resolve_or_missing((atom.idx,), parameter, values, context, missing)
                 if value is not None:
                     self._set_atom_param(atom, parameter, value)
-            if atom.idx in gaff2_types:
-                atom.type = gaff2_types[atom.idx]
+            type_candidates = gaff2_types.get(atom.idx, [])
+            if not type_candidates:
+                if atom.atomic_number == 1:
+                    pass
+                elif is_polymer_atom:
+                    missing.append(
+                        f"No GAFF2 type found for polymer atom {atom.idx} ({atom.name}). "
+                        "Ensure the fragment library covers all atoms in the polymer."
+                    )
+                else:
+                    logger.warning("No GAFF2 type for cap atom %d (%s).", atom.idx, atom.name)
+            else:
+                unique_types = set(type_candidates)
+                if len(unique_types) > 1:
+                    logger.warning(
+                        "Conflicting GAFF2 types for atom %d (%s): %s — using first match '%s'.",
+                        atom.idx, atom.name, unique_types, type_candidates[0],
+                    )
+                atom.type = type_candidates[0]
+
+    @staticmethod
+    def _is_polymer_hydrogen(atom: pmd.Atom, polymer_atom_metadata: dict[int, tuple]) -> bool:
+        if atom.atomic_number != 1:
+            return False
+        return any(
+            (b.atom1 if b.atom2 is atom else b.atom2).idx in polymer_atom_metadata
+            for b in atom.bonds
+        )
+
+    @staticmethod
+    def _infer_hydrogen_types(structure: pmd.Structure) -> None:
+        for atom in structure.atoms:
+            if atom.atomic_number != 1 or atom.type:
+                continue
+            for bond in atom.bonds:
+                neighbor = bond.atom1 if bond.atom2 is atom else bond.atom2
+                if neighbor.atomic_number != 1:
+                    atom.type = PolymerParameterisationTiler._hydrogen_type_from_heavy(neighbor)
+                    break
+
+    @staticmethod
+    def _hydrogen_type_from_heavy(heavy_atom: pmd.Atom) -> str:
+        t = (heavy_atom.type or "").lower()
+        if t.startswith("ca") or t in ("cp", "cq"):
+            return "ha"
+        if t in ("c2", "ce", "cf"):
+            return "h4"
+        if t.startswith("c"):
+            return "hc"
+        if t.startswith("o"):
+            return "ho"
+        if t.startswith("n"):
+            return "hn"
+        if t.startswith("s"):
+            return "hs"
+        if t.startswith("p"):
+            return "hp"
+        return "hc"
 
     def _apply_bonds(
         self,

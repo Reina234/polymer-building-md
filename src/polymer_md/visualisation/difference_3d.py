@@ -18,13 +18,26 @@ from polymer_md.visualisation.polymer_3d import _legend_font_color
 
 _VIEWER_WIDTH = 820
 _VIEWER_HEIGHT = 500
-_SPHERE_RADIUS_HEAVY = 0.28
-_SPHERE_RADIUS_HYDROGEN = 0.14
+_SPHERE_RADIUS_HEAVY = 0.42
+_SPHERE_RADIUS_HYDROGEN = 0.22
 _STICK_RADIUS = 0.08
 _DEFAULT_MAX_PCT = 50.0
 _N_COLORBAR_STEPS = 7
 
 _DIFF_CMAP = "bwr"
+
+
+def _non_clashing_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    stem, suffix = path.stem, path.suffix
+    parent = path.parent
+    counter = 1
+    while True:
+        candidate = parent / f"{stem} ({counter}){suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
 
 
 @dataclass
@@ -42,9 +55,11 @@ class DifferenceViewer:
         else:
             self._show_standalone(output_path)
 
-    def save(self, output_path: Path) -> None:
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(output_path).write_text(self._build_html(), encoding="utf-8")
+    def save(self, output_path: Path) -> Path:
+        output_path = _non_clashing_path(Path(output_path))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(self._build_html(), encoding="utf-8")
+        return output_path
 
     def _show_jupyter(self) -> None:
         from IPython.display import HTML, display
@@ -70,8 +85,11 @@ class DifferenceViewer:
         viewer_html = self._make_viewer_html(deviation)
         colorbar_html = _make_colorbar_html(self.max_pct)
         table_html = _make_stats_table_html(deviation.summaries)
+        monomer_html = _make_monomer_sequence_html(
+            self.molecule.atom_metadata, deviation.per_atom, self.max_pct
+        )
         return _assemble_difference_html(
-            viewer_html, colorbar_html, table_html, self.width, self.height
+            viewer_html, colorbar_html, table_html, monomer_html, self.width, self.height
         )
 
     def _make_viewer_html(self, deviation: AtomDeviation) -> str:
@@ -176,6 +194,89 @@ def _make_colorbar_html(max_pct: float) -> str:
 </div>"""
 
 
+def _make_monomer_sequence_html(
+    atom_metadata: dict[int, tuple[str, int]],
+    per_atom: dict[int, float],
+    max_pct: float,
+) -> str:
+    if not atom_metadata:
+        return ""
+
+    instances = _group_monomer_instances(atom_metadata)
+    if not instances:
+        return ""
+
+    cmap_obj = matplotlib.colormaps[_DIFF_CMAP]
+    norm = mcolors.TwoSlopeNorm(vmin=-max_pct, vcenter=0.0, vmax=max_pct)
+
+    per_type_deviations: dict[str, list[float]] = {}
+    blocks = []
+    for residue_id, atom_indices in instances:
+        deviations = [per_atom[idx] for idx in atom_indices if idx in per_atom]
+        avg = float(np.mean(deviations)) if deviations else 0.0
+        clamped = max(-max_pct, min(max_pct, avg))
+        color = mcolors.to_hex(cmap_obj(norm(clamped)))
+        text_color = "#000" if abs(clamped) < max_pct * 0.6 else "#fff"
+        blocks.append(
+            f'<div title="{residue_id}: avg {avg:+.1f}%" style="display:inline-block;'
+            f'width:28px;height:28px;background:{color};border:1px solid #bbb;'
+            f'border-radius:3px;margin:1px;text-align:center;line-height:28px;'
+            f'font-size:9px;font-weight:bold;color:{text_color};overflow:hidden;'
+            f'cursor:default;">{residue_id[:3]}</div>'
+        )
+        per_type_deviations.setdefault(residue_id, []).extend(deviations)
+
+    sequence_strip = "".join(blocks)
+
+    rows = []
+    for residue_id, devs in sorted(per_type_deviations.items()):
+        mean = float(np.mean(devs)) if devs else 0.0
+        std = float(np.std(devs)) if devs else 0.0
+        color = "#cc3333" if mean > 0 else "#2255bb"
+        rows.append(
+            f"<tr>"
+            f"<td style='padding:5px 10px'><b>{residue_id}</b></td>"
+            f"<td style='padding:5px 10px'>{len(devs)}</td>"
+            f"<td style='padding:5px 10px;color:{color};font-weight:bold'>{mean:+.1f}%</td>"
+            f"<td style='padding:5px 10px'>{std:.1f}%</td>"
+            f"</tr>"
+        )
+
+    return f"""\
+<h4 style="margin:16px 0 6px 0;color:#333">Monomer Sequence (hover for detail)</h4>
+<div style="overflow-x:auto;padding:4px 0;white-space:nowrap">{sequence_strip}</div>
+<h4 style="margin:14px 0 6px 0;color:#333">Per-Monomer-Type Summary</h4>
+<table style="font-size:13px;border-collapse:collapse">
+  <thead>
+    <tr style="background:#4C72B0;color:white">
+      <th style="padding:6px 10px;text-align:left">Monomer</th>
+      <th style="padding:6px 10px;text-align:left">Atoms matched</th>
+      <th style="padding:6px 10px;text-align:left">Mean deviation</th>
+      <th style="padding:6px 10px;text-align:left">Std deviation</th>
+    </tr>
+  </thead>
+  <tbody>{"".join(rows)}</tbody>
+</table>"""
+
+
+def _group_monomer_instances(
+    atom_metadata: dict[int, tuple[str, int]],
+) -> list[tuple[str, list[int]]]:
+    instances: list[tuple[str, list[int]]] = []
+    current_id: str | None = None
+    current_atoms: list[int] = []
+    for idx in sorted(atom_metadata.keys()):
+        residue_id, position = atom_metadata[idx]
+        if position == 0 and current_atoms:
+            instances.append((current_id, current_atoms))  # type: ignore[arg-type]
+            current_atoms = []
+        current_id = residue_id
+        current_atoms.append(idx)
+    if current_atoms:
+        instances.append((current_id, current_atoms))  # type: ignore[arg-type]
+    return instances
+
+
 def _make_stats_table_html(summaries) -> str:
     if not summaries:
         return "<p style='color:#888'>No fragment statistics available.</p>"
@@ -213,6 +314,7 @@ def _assemble_difference_html(
     viewer_html: str,
     colorbar_html: str,
     table_html: str,
+    monomer_html: str,
     width: int,
     height: int,
 ) -> str:
@@ -226,6 +328,7 @@ def _assemble_difference_html(
 <style>
   body {{ font-family: sans-serif; margin: 0; padding: 12px; background: #FAFAFA; }}
   h3 {{ margin: 0 0 8px 0; color: #333; }}
+  h4 {{ color: #333; }}
   iframe {{ display: block; border: none; }}
   table tr:nth-child(even) {{ background: #F5F7FA; }}
   table td, table th {{ border-bottom: 1px solid #E0E0E0; }}
@@ -236,6 +339,7 @@ def _assemble_difference_html(
 <h3>Parameter Deviation from Reference</h3>
 {colorbar_html}
 <iframe src="data:text/html;base64,{encoded}" width="{width}" height="{height}" frameborder="0"></iframe>
+{monomer_html}
 <h4 style="margin:14px 0 6px 0;color:#333">Fragment Statistics</h4>
 {table_html}
 </body>

@@ -131,6 +131,5 @@ viewer = DifferenceViewer(
     reference=reference,
     fragments=fragments,
 )
-diff_path = OUTPUT_DIR / "difference_3d.html"
-viewer.save(diff_path)
+diff_path = viewer.save(OUTPUT_DIR / "difference_3d.html")
 print(f"3D difference view saved to {diff_path}")
