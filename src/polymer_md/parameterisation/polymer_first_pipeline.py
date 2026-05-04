@@ -53,6 +53,7 @@ class PolymerFirstParameterisationPipeline:
     missing_strategies: dict[type, MissingParameterStrategy] = field(default_factory=dict)
     adjust_charge: bool = True
     charge_method: str = "bcc"
+    trimer_cache_dir: Path | None = None
 
     def run(self) -> tuple[ParameterisedMolecule, FragmentLibrary]:
         if self.n < 3:
@@ -88,7 +89,7 @@ class PolymerFirstParameterisationPipeline:
             conformer_generator=self.conformer_generator,
             charge_method=self.charge_method,
         )
-        trimers_dir = self.output_dir / "trimers"
+        trimers_dir = self.trimer_cache_dir or (self.output_dir / "trimers")
         parameterised_trimers = trimer_pipeline.run_selected(trimers, trimers_dir)
 
         logger.info("Building fragment library...")

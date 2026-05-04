@@ -5,6 +5,7 @@ then render a 3D difference view with atoms coloured by % deviation from referen
 Run:
     PATH="/Users/reinazheng/miniconda3/envs/md_engines/bin:$PATH" uv run python examples/compare_polymers.py
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,30 +21,44 @@ from polymer_md.building.solvers.proportional import ProportionalSolver
 from polymer_md.conversion.gromacs_files import GromacsFiles
 from polymer_md.core.monomer import Monomer
 from polymer_md.geometry.etkdg import ETKDGConformerGenerator
-from polymer_md.parameterisation.data_models.parameterised_mol import ParameterisedMolecule
-from polymer_md.parameterisation.fragments.data_models.parameters import AtomParameter, BondParameter, AngleParameter
+from polymer_md.parameterisation.data_models.parameterised_mol import (
+    ParameterisedMolecule,
+)
+from polymer_md.parameterisation.fragments.data_models.parameters import (
+    AtomParameter,
+    BondParameter,
+)
 from polymer_md.parameterisation.polymer_pipeline import PolymerParameterisationPipeline
-from polymer_md.parameterisation.strategies.residue_position import ResiduePositionStrategy
+from polymer_md.parameterisation.strategies.residue_position import (
+    ResiduePositionStrategy,
+)
 from polymer_md.utils.parmed_helper import mol_from_structure
 from polymer_md.visualisation.difference_3d import DifferenceViewer
 
 OUTPUT_DIR = Path("output/comparison_mmabamaa_vs_reference")
 REFERENCE_DIR = Path("tests/full_polymer_results/mmabamaa20_dpnb_4wt")
 REFERENCE_ITP = REFERENCE_DIR / "MMABAMAA20_GMX.itp"
+TRIMER_CACHE_DIR = Path("output/mmabamaa_polymer/trimers")
 
 
 def build_pipeline() -> PolymerParameterisationPipeline:
     specs = [
         MonomerSpec(
-            residue=MonomerToResidueConverter.convert(Monomer(smiles="C=C(C)C(=O)OC", label="MMA")),
+            residue=MonomerToResidueConverter.convert(
+                Monomer(smiles="C=C(C)C(=O)OC", label="MMA")
+            ),
             weight=0.5,
         ),
         MonomerSpec(
-            residue=MonomerToResidueConverter.convert(Monomer(smiles="C=CC(=O)OCCCC", label="BA")),
+            residue=MonomerToResidueConverter.convert(
+                Monomer(smiles="C=CC(=O)OCCCC", label="BA")
+            ),
             weight=0.3,
         ),
         MonomerSpec(
-            residue=MonomerToResidueConverter.convert(Monomer(smiles="C=C(C)C(=O)O", label="MAA")),
+            residue=MonomerToResidueConverter.convert(
+                Monomer(smiles="C=C(C)C(=O)O", label="MAA")
+            ),
             weight=0.2,
         ),
     ]
@@ -53,10 +68,13 @@ def build_pipeline() -> PolymerParameterisationPipeline:
         output_dir=OUTPUT_DIR / "pipeline",
         seed=42,
         solver=ProportionalSolver(ht_fraction=1.0),
-        conformer_generator=ETKDGConformerGenerator(use_uff=False, use_random_coords=True),
+        conformer_generator=ETKDGConformerGenerator(
+            use_uff=False, use_random_coords=True
+        ),
         missing_strategies={AtomParameter: ResiduePositionStrategy(min_matches=1)},
         adjust_charge=True,
         charge_method="bcc",
+        trimer_cache_dir=TRIMER_CACHE_DIR if TRIMER_CACHE_DIR.exists() else None,
     )
 
 
@@ -101,6 +119,7 @@ print(TextReport(comparison))
 
 try:
     from polymer_md.visualisation.comparison import plot_comparison
+
     fig = plot_comparison(comparison)
     fig.savefig(OUTPUT_DIR / "comparison.pdf", bbox_inches="tight")
     print(f"\nPlot saved to {OUTPUT_DIR / 'comparison.pdf'}")

@@ -258,6 +258,115 @@ class TestSetAtomParam:
 # Tests: invalid SMARTS and improper dihedral coverage
 # ---------------------------------------------------------------------------
 
+class TestAtomTypeValidation:
+    """GAFF2 type assignment now goes through the error-reporting path."""
+
+    def _zero_strategies(self):
+        class ZeroStrategy:
+            def resolve(self, gi, p, c):
+                return 0.0
+        z = ZeroStrategy()
+        return {AtomParameter: z, BondParameter: z, AngleParameter: z, DihedralParameter: z}
+
+    def test_missing_gaff2_type_for_polymer_atom_raises(self, propane_mol):
+        """A polymer atom with no library type match must raise MissingParameterError."""
+        # Library has no atom_metadata → no GAFF2 types
+        heavy = tuple(
+            i for i in range(propane_mol.GetNumAtoms())
+            if propane_mol.GetAtomWithIdx(i).GetAtomicNum() != 1
+        )
+        from polymer_md.parameterisation.fragments.extraction.smarts_builder import SmartsBuilder
+        from polymer_md.parameterisation.fragments.data_models.atom_metadata import AtomMetadata
+        pattern, g2l = SmartsBuilder.subgraph(propane_mol, heavy)
+        library = FragmentLibrary(records=(), atom_metadata={})  # no type metadata
+        structure = TopologyBuilder.build(propane_mol)
+        polymer_metadata = {idx: ("MOL", i) for i, idx in enumerate(heavy)}
+        tiler = PolymerParameterisationTiler(library=library, missing_strategies=self._zero_strategies())
+
+        with pytest.raises(MissingParameterError, match="GAFF2 type"):
+            tiler.tile(structure, propane_mol, polymer_atom_metadata=polymer_metadata)
+
+    def test_cap_atom_missing_type_is_warning_not_error(self, propane_mol, caplog):
+        """Cap atoms (not in polymer_atom_metadata) missing a type get a warning, not an error."""
+        import logging
+        library = FragmentLibrary(records=(), atom_metadata={})
+        structure = TopologyBuilder.build(propane_mol)
+        # polymer_atom_metadata is empty → all atoms treated as caps
+        tiler = PolymerParameterisationTiler(library=library, missing_strategies=self._zero_strategies())
+        with caplog.at_level(logging.WARNING):
+            tiler.tile(structure, propane_mol, polymer_atom_metadata={})
+        assert any("cap atom" in r.message.lower() for r in caplog.records)
+
+    def test_conflicting_types_uses_first_match_and_warns(self, propane_mol, caplog):
+        """When two patterns assign different types to the same atom, warn and keep the first."""
+        import logging
+        from polymer_md.parameterisation.fragments.extraction.smarts_builder import SmartsBuilder
+        from polymer_md.parameterisation.fragments.data_models.atom_metadata import AtomMetadata
+        heavy = tuple(
+            i for i in range(propane_mol.GetNumAtoms())
+            if propane_mol.GetAtomWithIdx(i).GetAtomicNum() != 1
+        )
+        centre = heavy[0]
+        # Build two patterns that both match centre but assign different types
+        pattern1, g2l1 = SmartsBuilder.subgraph(propane_mol, heavy)
+        pattern2, g2l2 = SmartsBuilder.subgraph(propane_mol, (centre,))
+        metadata = {
+            pattern1: {g2l1[centre]: AtomMetadata(gaff2_type="c3", residue_id="M", within_residue_position=0)},
+            pattern2: {g2l2[centre]: AtomMetadata(gaff2_type="ca", residue_id="M", within_residue_position=0)},
+        }
+        library = FragmentLibrary(records=(), atom_metadata=metadata)
+        structure = TopologyBuilder.build(propane_mol)
+        tiler = PolymerParameterisationTiler(library=library, missing_strategies=self._zero_strategies())
+        with caplog.at_level(logging.WARNING):
+            tiler.tile(structure, propane_mol, polymer_atom_metadata={centre: ("M", 0)})
+        assert structure.atoms[centre].type in ("c3", "ca")
+        assert any("conflicting" in r.message.lower() for r in caplog.records)
+
+    def test_consistent_duplicate_types_assigned_silently(self, propane_mol, caplog):
+        """When two patterns agree on the type, assign it without warning."""
+        import logging
+        from polymer_md.parameterisation.fragments.extraction.smarts_builder import SmartsBuilder
+        from polymer_md.parameterisation.fragments.data_models.atom_metadata import AtomMetadata
+        heavy = tuple(
+            i for i in range(propane_mol.GetNumAtoms())
+            if propane_mol.GetAtomWithIdx(i).GetAtomicNum() != 1
+        )
+        centre = heavy[0]
+        pattern1, g2l1 = SmartsBuilder.subgraph(propane_mol, heavy)
+        pattern2, g2l2 = SmartsBuilder.subgraph(propane_mol, (centre,))
+        metadata = {
+            pattern1: {g2l1[centre]: AtomMetadata(gaff2_type="c3", residue_id="M", within_residue_position=0)},
+            pattern2: {g2l2[centre]: AtomMetadata(gaff2_type="c3", residue_id="M", within_residue_position=0)},
+        }
+        library = FragmentLibrary(records=(), atom_metadata=metadata)
+        structure = TopologyBuilder.build(propane_mol)
+        tiler = PolymerParameterisationTiler(library=library, missing_strategies=self._zero_strategies())
+        with caplog.at_level(logging.WARNING):
+            tiler.tile(structure, propane_mol, polymer_atom_metadata={centre: ("M", 0)})
+        assert structure.atoms[centre].type == "c3"
+        assert not any("conflicting" in r.message.lower() for r in caplog.records)
+
+    def test_collect_gaff2_types_returns_list_per_atom(self, propane_mol):
+        """_collect_gaff2_types accumulates all candidates per atom index."""
+        from polymer_md.parameterisation.fragments.extraction.smarts_builder import SmartsBuilder
+        from polymer_md.parameterisation.fragments.data_models.atom_metadata import AtomMetadata
+        heavy = tuple(
+            i for i in range(propane_mol.GetNumAtoms())
+            if propane_mol.GetAtomWithIdx(i).GetAtomicNum() != 1
+        )
+        centre = heavy[0]
+        pattern, g2l = SmartsBuilder.subgraph(propane_mol, (centre,))
+        metadata = {
+            pattern: {g2l[centre]: AtomMetadata(gaff2_type="c3", residue_id="M", within_residue_position=0)}
+        }
+        library = FragmentLibrary(records=(), atom_metadata=metadata)
+        tiler = PolymerParameterisationTiler(library=library)
+        result = tiler._collect_gaff2_types(propane_mol)
+        assert centre in result
+        assert isinstance(result[centre], list)
+        assert "c3" in result[centre]
+
+
 class TestCollectAssignmentsInvalidSmarts:
     def test_invalid_pattern_in_library_is_skipped(self):
         bad_fragment = Fragment(
