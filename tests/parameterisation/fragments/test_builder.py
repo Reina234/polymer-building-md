@@ -189,7 +189,7 @@ class TestProcessTrimer:
             MockMatcher.return_value.match_all.return_value = []
             MockMatcher.return_value.build_records.return_value = []
             FragmentLibraryBuilder()._process_trimer(pt)
-        mock_derive.assert_called_once_with(pt.structure)
+        mock_derive.assert_called_once_with(pt.structure, pt.mol_3d)
 
 
 # ---------------------------------------------------------------------------

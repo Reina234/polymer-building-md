@@ -241,8 +241,10 @@ class TestExtractAngleMembers:
         # Middle carbon is the centre of all H-C-C and H-C-H angles
         assert len(fragment.annotated_angles) > 0
 
-    def test_angle_middle_not_in_region_excluded(self, propane_mol, propane_structure):
-        # Only terminal C (index 0) in region; angles centred on C1 not included
+    def test_angles_with_no_atom_in_region_excluded(self, propane_mol, propane_structure):
+        # Only terminal C (index 0) in region; angles where no atom touches region excluded.
+        # Angles spanning into region (atom 0 as endpoint) are now included, consistent
+        # with the "touches region" rule used for bonds.
         region = frozenset([0])
         context = frozenset(range(propane_mol.GetNumAtoms()))
         extractor = RegionFragmentExtractor()
@@ -251,11 +253,10 @@ class TestExtractAngleMembers:
             context_parmed_indices=context,
             region_parmed_indices=region,
         )
+        local_to_global = {v: k for k, v in global_to_local.items()}
         for member in fragment.annotated_angles:
-            # The middle local index must map to atom in region
-            middle_local = member.local_indices[1]
-            middle_global = next(g for g, l in global_to_local.items() if l == middle_local)
-            assert middle_global in region
+            global_indices = tuple(local_to_global[li] for li in member.local_indices)
+            assert any(g in region for g in global_indices)
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +278,7 @@ class TestExtractDihedralMembers:
         )
         assert len(fragment.annotated_dihedrals) > 0
 
-    def test_dihedral_parameters_cover_all_params(self, butane_mol, butane_structure):
+    def test_one_annotated_dihedral_per_quadruple(self, butane_mol, butane_structure):
         region = frozenset(
             i for i in range(butane_mol.GetNumAtoms())
             if butane_mol.GetAtomWithIdx(i).GetAtomicNum() != 1
@@ -289,9 +290,9 @@ class TestExtractDihedralMembers:
             context_parmed_indices=context,
             region_parmed_indices=region,
         )
-        dihedral_params = {m.parameter for m in fragment.annotated_dihedrals}
-        for param in DihedralParameter:
-            assert param in dihedral_params
+        local_index_sets = {m.local_indices for m in fragment.annotated_dihedrals}
+        assert len(fragment.annotated_dihedrals) == len(local_index_sets)
+        assert all(m.parameter == DihedralParameter.FORCE_CONSTANT for m in fragment.annotated_dihedrals)
 
     def test_no_duplicate_dihedrals(self, butane_mol, butane_structure):
         context = frozenset(range(butane_mol.GetNumAtoms()))
@@ -468,7 +469,7 @@ class TestExtractDihedralMembersDirectly:
         global_to_local = {0: 0, 1: 1, 2: 2, 3: 3}
         members = extractor._extract_dihedral_members(mock_structure, region, global_to_local)
 
-        assert len(members) == len(list(DihedralParameter))
+        assert len(members) == 1
 
     def test_only_improper_dihedrals_gives_no_members(self):
         extractor = RegionFragmentExtractor()
@@ -492,7 +493,7 @@ class TestExtractDihedralMembersDirectly:
         global_to_local = {0: 0, 1: 1, 2: 2, 3: 3}
         members = extractor._extract_dihedral_members(mock_structure, region, global_to_local)
 
-        assert len(members) == len(list(DihedralParameter))
+        assert len(members) == 1
 
     def test_reversed_dihedral_treated_as_duplicate(self):
         extractor = RegionFragmentExtractor()
@@ -505,4 +506,4 @@ class TestExtractDihedralMembersDirectly:
         global_to_local = {0: 0, 1: 1, 2: 2, 3: 3}
         members = extractor._extract_dihedral_members(mock_structure, region, global_to_local)
 
-        assert len(members) == len(list(DihedralParameter))
+        assert len(members) == 1

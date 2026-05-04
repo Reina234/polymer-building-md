@@ -268,3 +268,96 @@ class TestParameteriseTrimerMethod:
             subdirs = list(tmp_path.iterdir())
             assert len(subdirs) == 1
             assert subdirs[0].is_dir()
+
+
+class TestTrimerDeduplication:
+    def _make_two_trimers_same_smiles(self) -> tuple[TrimerResult, TrimerResult]:
+        mol = Chem.MolFromSmiles("CCCCCC")
+        t1 = TrimerResult(
+            left_id="A", central_id="A", right_id="A",
+            left_bond=BondType(from_site=0, to_site=1),
+            right_bond=BondType(from_site=1, to_site=0),
+            mol=mol, probability=1.0,
+            left_atom_indices=frozenset({0, 1}),
+            central_atom_indices=frozenset({2, 3}),
+            right_atom_indices=frozenset({4, 5}),
+            cap_atom_indices=frozenset(),
+        )
+        t2 = TrimerResult(
+            left_id="B", central_id="B", right_id="B",
+            left_bond=BondType(from_site=0, to_site=1),
+            right_bond=BondType(from_site=1, to_site=0),
+            mol=mol, probability=0.5,
+            left_atom_indices=frozenset({0, 1}),
+            central_atom_indices=frozenset({2, 3}),
+            right_atom_indices=frozenset({4, 5}),
+            cap_atom_indices=frozenset(),
+        )
+        return t1, t2
+
+    def test_duplicate_trimers_skip_parameterisation(self):
+        t1, t2 = self._make_two_trimers_same_smiles()
+        specs = _make_specs()
+        cached_result = MagicMock(spec=ParameterisedTrimer)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            with (
+                patch.object(
+                    TrimerParameterisationPipeline, "_filter_by_probability",
+                    return_value=[t1, t2],
+                ),
+                patch.object(
+                    TrimerParameterisationPipeline, "_parameterise_trimer",
+                    return_value=cached_result,
+                ) as mock_param,
+            ):
+                pipeline = TrimerParameterisationPipeline(specs=specs, probability_threshold=0.0)
+                results = pipeline.run(tmp_path)
+
+        assert mock_param.call_count == 1
+        assert len(results) == 2
+        assert results[0] is results[1]
+
+    def test_unique_trimers_all_parameterised(self):
+        mol_a = Chem.MolFromSmiles("CCCCCC")
+        mol_b = Chem.MolFromSmiles("CCCOCC")
+        t1 = TrimerResult(
+            left_id="A", central_id="A", right_id="A",
+            left_bond=BondType(from_site=0, to_site=1),
+            right_bond=BondType(from_site=1, to_site=0),
+            mol=mol_a, probability=1.0,
+            left_atom_indices=frozenset({0, 1}),
+            central_atom_indices=frozenset({2, 3}),
+            right_atom_indices=frozenset({4, 5}),
+            cap_atom_indices=frozenset(),
+        )
+        t2 = TrimerResult(
+            left_id="B", central_id="B", right_id="B",
+            left_bond=BondType(from_site=0, to_site=1),
+            right_bond=BondType(from_site=1, to_site=0),
+            mol=mol_b, probability=0.5,
+            left_atom_indices=frozenset({0, 1}),
+            central_atom_indices=frozenset({2, 3}),
+            right_atom_indices=frozenset({4, 5}),
+            cap_atom_indices=frozenset(),
+        )
+        specs = _make_specs()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            with (
+                patch.object(
+                    TrimerParameterisationPipeline, "_filter_by_probability",
+                    return_value=[t1, t2],
+                ),
+                patch.object(
+                    TrimerParameterisationPipeline, "_parameterise_trimer",
+                    return_value=MagicMock(spec=ParameterisedTrimer),
+                ) as mock_param,
+            ):
+                pipeline = TrimerParameterisationPipeline(specs=specs, probability_threshold=0.0)
+                results = pipeline.run(tmp_path)
+
+        assert mock_param.call_count == 2
+        assert len(results) == 2

@@ -17,6 +17,7 @@ from polymer_md.parameterisation.fragments.data_models.parameters import (
     AtomParameter,
     BondParameter,
     DihedralParameter,
+    DihedralTerm,
 )
 from polymer_md.parameterisation.fragments.matching.matcher import FragmentMatcher
 from polymer_md.utils.topology_builder import TopologyBuilder
@@ -216,7 +217,7 @@ class TestExtractValue:
         result = FragmentMatcher._extract_value(propane_structure, (i, j, k), member)
         assert pytest.approx(result, abs=1e-6) == 109.5
 
-    def test_dihedral_force_constant(self, butane_mol, butane_structure):
+    def test_dihedral_returns_all_terms(self, butane_mol, butane_structure):
         dihedral = butane_structure.dihedrals[0]
         i, j, k, l = (
             dihedral.atom1.idx, dihedral.atom2.idx,
@@ -224,27 +225,12 @@ class TestExtractValue:
         )
         member = AnnotatedDihedral(local_indices=(0, 1, 2, 3), parameter=DihedralParameter.FORCE_CONSTANT)
         result = FragmentMatcher._extract_value(butane_structure, (i, j, k, l), member)
-        assert pytest.approx(result, abs=1e-6) == 0.8
-
-    def test_dihedral_phase(self, butane_mol, butane_structure):
-        dihedral = butane_structure.dihedrals[0]
-        i, j, k, l = (
-            dihedral.atom1.idx, dihedral.atom2.idx,
-            dihedral.atom3.idx, dihedral.atom4.idx,
-        )
-        member = AnnotatedDihedral(local_indices=(0, 1, 2, 3), parameter=DihedralParameter.PHASE)
-        result = FragmentMatcher._extract_value(butane_structure, (i, j, k, l), member)
-        assert pytest.approx(result, abs=1e-6) == 0.0
-
-    def test_dihedral_periodicity(self, butane_mol, butane_structure):
-        dihedral = butane_structure.dihedrals[0]
-        i, j, k, l = (
-            dihedral.atom1.idx, dihedral.atom2.idx,
-            dihedral.atom3.idx, dihedral.atom4.idx,
-        )
-        member = AnnotatedDihedral(local_indices=(0, 1, 2, 3), parameter=DihedralParameter.PERIODICITY)
-        result = FragmentMatcher._extract_value(butane_structure, (i, j, k, l), member)
-        assert pytest.approx(result, abs=1e-6) == 2.0
+        assert isinstance(result, tuple)
+        assert len(result) >= 1
+        assert isinstance(result[0], DihedralTerm)
+        assert pytest.approx(result[0].force_constant, abs=1e-6) == 0.8
+        assert pytest.approx(result[0].phase, abs=1e-6) == 0.0
+        assert pytest.approx(result[0].periodicity, abs=1e-6) == 2.0
 
     def test_atom_charge(self, propane_mol, propane_structure):
         member = AnnotatedAtom(local_index=0, parameter=AtomParameter.CHARGE)
@@ -284,7 +270,7 @@ class TestExtractValueErrors:
 
     def test_dihedral_not_found_raises(self, butane_structure):
         member = AnnotatedDihedral(local_indices=(0, 1, 2, 3), parameter=DihedralParameter.FORCE_CONSTANT)
-        with pytest.raises(ValueError, match="Dihedral not found"):
+        with pytest.raises(ValueError, match="dihedral not found"):
             FragmentMatcher._extract_value(butane_structure, (99, 100, 101, 102), member)
 
 
@@ -338,54 +324,51 @@ class TestBuildRecordsEndToEnd:
 
 
 # ---------------------------------------------------------------------------
-# Tests: DihedralTypeList handling (GAFF multi-periodicity dihedrals)
+# Tests: _dihedral_terms — multi-periodicity extraction
 # ---------------------------------------------------------------------------
 
-class TestReadDihedralParameterWithDihedralTypeList:
-    def _make_mock_dihedral(self, phi_k: float, phase: float, per: float) -> pmd.Dihedral:
-        from unittest.mock import MagicMock
-        dihedral = MagicMock()
-        dihedral.type = MagicMock()
-        dihedral.type.phi_k = phi_k
-        dihedral.type.phase = phase
-        dihedral.type.per = per
-        return dihedral
+class TestDihedralTerms:
+    def _make_structure_with_dihedral(
+        self, phi_k: float, phase: float, per: float
+    ) -> pmd.Structure:
+        structure = pmd.Structure()
+        atoms = [pmd.Atom() for _ in range(4)]
+        for atom in atoms:
+            structure.add_atom(atom, "MOL", 1)
+        dihedral = pmd.Dihedral(atoms[0], atoms[1], atoms[2], atoms[3])
+        dihedral.type = pmd.DihedralType(phi_k=phi_k, phase=phase, per=per)
+        structure.dihedrals.append(dihedral)
+        return structure
 
-    def _make_mock_dihedral_with_type_list(self, phi_k: float, phase: float, per: float) -> pmd.Dihedral:
-        from unittest.mock import MagicMock
+    def test_single_term_returns_one_element_tuple(self):
+        structure = self._make_structure_with_dihedral(phi_k=1.5, phase=0.0, per=2.0)
+        result = FragmentMatcher._dihedral_terms(structure, (0, 1, 2, 3))
+        assert isinstance(result, tuple)
+        assert len(result) == 1
+        assert isinstance(result[0], DihedralTerm)
+        assert pytest.approx(result[0].force_constant, abs=1e-6) == 1.5
+        assert pytest.approx(result[0].phase, abs=1e-6) == 0.0
+        assert pytest.approx(result[0].periodicity, abs=1e-6) == 2.0
+
+    def test_type_list_returns_all_terms(self):
         from parmed.topologyobjects import DihedralType, DihedralTypeList
+        structure = pmd.Structure()
+        atoms = [pmd.Atom() for _ in range(4)]
+        for atom in atoms:
+            structure.add_atom(atom, "MOL", 1)
         dtype_list = DihedralTypeList()
-        dtype_list.append(DihedralType(phi_k=phi_k, phase=phase, per=per))
-        dihedral = MagicMock()
+        dtype_list.append(DihedralType(phi_k=1.0, phase=0.0, per=1))
+        dtype_list.append(DihedralType(phi_k=0.5, phase=3.14, per=3))
+        dihedral = pmd.Dihedral(atoms[0], atoms[1], atoms[2], atoms[3])
         dihedral.type = dtype_list
-        return dihedral
+        structure.dihedrals.append(dihedral)
+        result = FragmentMatcher._dihedral_terms(structure, (0, 1, 2, 3))
+        assert len(result) == 2
+        assert pytest.approx(result[0].force_constant, abs=1e-6) == 1.0
+        assert pytest.approx(result[1].force_constant, abs=1e-6) == 0.5
+        assert pytest.approx(result[1].phase, abs=1e-3) == 3.14
 
-    def test_single_type_returns_phi_k(self):
-        dihedral = self._make_mock_dihedral(phi_k=1.5, phase=0.0, per=2.0)
-        result = FragmentMatcher._read_dihedral_parameter(dihedral, DihedralParameter.FORCE_CONSTANT)
-        assert pytest.approx(result, abs=1e-6) == 1.5
-
-    def test_single_type_returns_phase(self):
-        dihedral = self._make_mock_dihedral(phi_k=1.5, phase=3.14, per=2.0)
-        result = FragmentMatcher._read_dihedral_parameter(dihedral, DihedralParameter.PHASE)
-        assert pytest.approx(result, abs=1e-6) == 3.14
-
-    def test_single_type_returns_periodicity(self):
-        dihedral = self._make_mock_dihedral(phi_k=1.5, phase=0.0, per=3.0)
-        result = FragmentMatcher._read_dihedral_parameter(dihedral, DihedralParameter.PERIODICITY)
-        assert pytest.approx(result, abs=1e-6) == 3.0
-
-    def test_type_list_uses_first_term_for_phi_k(self):
-        dihedral = self._make_mock_dihedral_with_type_list(phi_k=2.5, phase=0.0, per=1.0)
-        result = FragmentMatcher._read_dihedral_parameter(dihedral, DihedralParameter.FORCE_CONSTANT)
-        assert pytest.approx(result, abs=1e-6) == 2.5
-
-    def test_type_list_uses_first_term_for_phase(self):
-        dihedral = self._make_mock_dihedral_with_type_list(phi_k=2.5, phase=1.57, per=1.0)
-        result = FragmentMatcher._read_dihedral_parameter(dihedral, DihedralParameter.PHASE)
-        assert pytest.approx(result, abs=1e-6) == 1.57
-
-    def test_type_list_uses_first_term_for_periodicity(self):
-        dihedral = self._make_mock_dihedral_with_type_list(phi_k=2.5, phase=0.0, per=2.0)
-        result = FragmentMatcher._read_dihedral_parameter(dihedral, DihedralParameter.PERIODICITY)
-        assert pytest.approx(result, abs=1e-6) == 2.0
+    def test_dihedral_not_found_raises(self):
+        structure = self._make_structure_with_dihedral(phi_k=1.0, phase=0.0, per=2.0)
+        with pytest.raises(ValueError, match="dihedral not found"):
+            FragmentMatcher._dihedral_terms(structure, (99, 100, 101, 102))

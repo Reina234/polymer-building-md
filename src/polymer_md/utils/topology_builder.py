@@ -13,6 +13,7 @@ class TopologyBuilder:
         TopologyBuilder._add_bonds(mol, atoms, structure)
         TopologyBuilder._add_angles(mol, atoms, structure)
         TopologyBuilder._add_dihedrals(mol, atoms, structure)
+        TopologyBuilder._add_impropers(mol, atoms, structure)
         return structure
 
     @staticmethod
@@ -77,3 +78,18 @@ class TopologyBuilder:
                         structure.dihedrals.append(
                             pmd.Dihedral(atoms[key[0]], atoms[key[1]], atoms[key[2]], atoms[key[3]])
                         )
+
+    @staticmethod
+    def _add_impropers(mol: Chem.Mol, atoms: list[pmd.Atom], structure: pmd.Structure) -> None:
+        sp2 = Chem.rdchem.HybridizationType.SP2
+        for atom in mol.GetAtoms():
+            if atom.GetHybridization() != sp2:
+                continue
+            center = atom.GetIdx()
+            neighbors = [n.GetIdx() for n in atom.GetNeighbors()]
+            if len(neighbors) < 3:
+                continue
+            i, j, l = neighbors[0], neighbors[1], neighbors[2]
+            structure.dihedrals.append(
+                pmd.Dihedral(atoms[i], atoms[j], atoms[center], atoms[l], improper=True)
+            )

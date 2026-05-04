@@ -5,7 +5,7 @@ from typing import Protocol
 
 from rdkit import Chem
 
-from polymer_md.parameterisation.fragments.data_models.parameters import ForceFieldParameter
+from polymer_md.parameterisation.fragments.data_models.parameters import DihedralTerm, ForceFieldParameter
 from polymer_md.parameterisation.fragments.library import FragmentLibrary
 
 
@@ -27,4 +27,4 @@ class MissingParameterStrategy(Protocol):
         global_indices: tuple[int, ...],
         parameter: ForceFieldParameter,
         context: StrategyContext,
-    ) -> float: ...
+    ) -> float | tuple[DihedralTerm, ...]: ...

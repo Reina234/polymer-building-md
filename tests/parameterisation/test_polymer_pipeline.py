@@ -126,10 +126,9 @@ class TestPolymerPipelineRun:
             mock_polymer.residue_instances = []
 
             with (
-                patch.object(PolymerParameterisationPipeline, "_build_polymer", return_value=mock_polymer),
+                patch.object(PolymerParameterisationPipeline, "_build_polymer", return_value=(mock_polymer, [])),
                 patch("polymer_md.parameterisation.polymer_pipeline.ETKDGConformerGenerator") as MockConformer,
                 patch("polymer_md.parameterisation.polymer_pipeline.TopologyBuilder") as MockTB,
-                patch("polymer_md.parameterisation.polymer_pipeline.StructureMolDeriver") as MockDeriv,
                 patch("polymer_md.parameterisation.polymer_pipeline.PolymerParameterisationTiler") as MockTiler,
                 patch("polymer_md.parameterisation.polymer_pipeline.adjust_charge_neutrality"),
             ):
@@ -137,13 +136,19 @@ class TestPolymerPipelineRun:
                 mock_atoms = [MagicMock() for _ in range(3)]
                 mock_structure.atoms = mock_atoms
                 MockTB.build.return_value = mock_structure
-                MockDeriv.derive.return_value = mol
                 MockConformer.return_value.embed.return_value = mol
                 mock_tiler_instance = MagicMock()
                 MockTiler.return_value = mock_tiler_instance
 
                 # Patch _save_gromacs to avoid actual file I/O
-                with patch.object(PolymerParameterisationPipeline, "_save_gromacs") as mock_save:
+                with (
+                    patch.object(
+                        PolymerParameterisationPipeline,
+                        "_build_library_for_polymer",
+                        return_value=_empty_library(),
+                    ),
+                    patch.object(PolymerParameterisationPipeline, "_save_gromacs") as mock_save,
+                ):
                     from polymer_md.conversion.gromacs_files import GromacsFiles
                     gro = tmp / "p.gro"
                     top = tmp / "p.top"
@@ -153,7 +158,6 @@ class TestPolymerPipelineRun:
                     mock_save.return_value = GromacsFiles(itp=itp, gro=gro, top=top)
 
                     pipeline = PolymerParameterisationPipeline(
-                        library=_empty_library(),
                         specs=_specs(),
                         n=5,
                         output_dir=tmp,
@@ -167,13 +171,13 @@ class TestPolymerPipelineRun:
         from polymer_md.core.polymer import Polymer
 
         pipeline = PolymerParameterisationPipeline(
-            library=_empty_library(),
             specs=_specs(),
             n=3,
             output_dir=Path("/tmp/test_build_polymer_direct"),
         )
-        polymer = pipeline._build_polymer()
+        polymer, connections = pipeline._build_polymer()
         assert isinstance(polymer, Polymer)
+        assert isinstance(connections, list)
 
     def test_save_gromacs_creates_output_files(self):
         import tempfile
@@ -187,7 +191,6 @@ class TestPolymerPipelineRun:
             structure.add_atom(atom, "MOL", 1)
 
             pipeline = PolymerParameterisationPipeline(
-                library=_empty_library(),
                 specs=_specs(),
                 n=3,
                 output_dir=tmp,
@@ -197,6 +200,23 @@ class TestPolymerPipelineRun:
             assert gromacs_files.gro.exists()
             assert gromacs_files.top.exists()
             assert gromacs_files.itp.exists()
+
+    def test_save_gromacs_writes_gaff2_fudge_factors(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            structure = pmd.Structure()
+            atom = pmd.Atom()
+            atom.xx = 0.0; atom.xy = 0.0; atom.xz = 0.0
+            structure.add_atom(atom, "MOL", 1)
+
+            pipeline = PolymerParameterisationPipeline(
+                specs=_specs(), n=3, output_dir=tmp,
+            )
+            gromacs_files = pipeline._save_gromacs(structure)
+            top_text = gromacs_files.top.read_text()
+            assert "0.5" in top_text
+            assert "0.8333" in top_text
 
     def test_adjust_charge_skipped_when_disabled(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -208,10 +228,9 @@ class TestPolymerPipelineRun:
             mock_polymer.residue_instances = []
 
             with (
-                patch.object(PolymerParameterisationPipeline, "_build_polymer", return_value=mock_polymer),
+                patch.object(PolymerParameterisationPipeline, "_build_polymer", return_value=(mock_polymer, [])),
                 patch("polymer_md.parameterisation.polymer_pipeline.ETKDGConformerGenerator"),
                 patch("polymer_md.parameterisation.polymer_pipeline.TopologyBuilder") as MockTB,
-                patch("polymer_md.parameterisation.polymer_pipeline.StructureMolDeriver") as MockDeriv,
                 patch("polymer_md.parameterisation.polymer_pipeline.PolymerParameterisationTiler"),
                 patch("polymer_md.parameterisation.polymer_pipeline.adjust_charge_neutrality") as mock_adj,
                 patch.object(PolymerParameterisationPipeline, "_save_gromacs") as mock_save,
@@ -219,7 +238,6 @@ class TestPolymerPipelineRun:
                 mock_structure = MagicMock(spec=pmd.Structure)
                 mock_structure.atoms = []
                 MockTB.build.return_value = mock_structure
-                MockDeriv.derive.return_value = mol
 
                 from polymer_md.conversion.gromacs_files import GromacsFiles
                 gro = tmp / "p.gro"; top = tmp / "p.top"; itp = tmp / "p.itp"
@@ -227,14 +245,18 @@ class TestPolymerPipelineRun:
                     f.write_text("")
                 mock_save.return_value = GromacsFiles(itp=itp, gro=gro, top=top)
 
-                pipeline = PolymerParameterisationPipeline(
-                    library=_empty_library(),
-                    specs=_specs(),
-                    n=3,
-                    output_dir=tmp,
-                    adjust_charge=False,
-                )
-                pipeline.run()
+                with patch.object(
+                    PolymerParameterisationPipeline,
+                    "_build_library_for_polymer",
+                    return_value=_empty_library(),
+                ):
+                    pipeline = PolymerParameterisationPipeline(
+                        specs=_specs(),
+                        n=3,
+                        output_dir=tmp,
+                        adjust_charge=False,
+                    )
+                    pipeline.run()
 
             mock_adj.assert_not_called()
 

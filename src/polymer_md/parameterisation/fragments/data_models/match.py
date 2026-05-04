@@ -8,7 +8,9 @@ from polymer_md.parameterisation.fragments.data_models.annotated_members import 
     AnnotatedMember,
 )
 from polymer_md.parameterisation.fragments.data_models.fragment import Fragment
-from polymer_md.parameterisation.fragments.data_models.parameters import ForceFieldParameter
+from polymer_md.parameterisation.fragments.data_models.parameters import DihedralTerm, ForceFieldParameter
+
+ParameterValue = float | tuple[DihedralTerm, ...]
 
 
 class ResolutionStrategy(ABC):
@@ -34,7 +36,7 @@ class FragmentMatch:
 
 @dataclass(frozen=True)
 class ParameterHit:
-    value: float
+    value: ParameterValue
     fragment: Fragment
     match_instance: int
     member_local_indices: tuple[int, ...]
@@ -52,4 +54,4 @@ class ParameterRecord:
                 f"No parameter hits for atoms {self.global_indices} "
                 f"with parameter {self.parameter}"
             )
-        return strategy.resolve([hit.value for hit in self.hits])
+        return strategy.resolve([hit.value for hit in self.hits])  # type: ignore[arg-type]

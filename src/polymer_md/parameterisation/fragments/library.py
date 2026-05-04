@@ -10,6 +10,7 @@ from polymer_md.parameterisation.fragments.data_models.annotated_members import 
     AnnotatedAtom,
     AnnotatedBond,
     AnnotatedDihedral,
+    AnnotatedImproper,
     AnnotatedMember,
 )
 from polymer_md.parameterisation.fragments.data_models.atom_metadata import AtomMetadata
@@ -23,7 +24,9 @@ from polymer_md.parameterisation.fragments.data_models.parameters import (
     AtomParameter,
     BondParameter,
     DihedralParameter,
+    DihedralTerm,
     ForceFieldParameter,
+    ImproperParameter,
 )
 
 
@@ -31,6 +34,7 @@ class ParameterKind(StrEnum):
     BOND = "bond"
     ANGLE = "angle"
     DIHEDRAL = "dihedral"
+    IMPROPER_DIHEDRAL = "improper_dihedral"
     ATOM = "atom"
 
 
@@ -38,6 +42,7 @@ _KIND_TO_CLASS: dict[ParameterKind, type] = {
     ParameterKind.BOND: BondParameter,
     ParameterKind.ANGLE: AngleParameter,
     ParameterKind.DIHEDRAL: DihedralParameter,
+    ParameterKind.IMPROPER_DIHEDRAL: ImproperParameter,
     ParameterKind.ATOM: AtomParameter,
 }
 _CLASS_TO_KIND: dict[type, ParameterKind] = {cls: kind for kind, cls in _KIND_TO_CLASS.items()}
@@ -63,10 +68,15 @@ class _MetaField(StrEnum):
     WITHIN_RESIDUE_POSITION = "within_residue_position"
 
 
+_SCHEMA_VERSION = "2"
+_SUPPORTED_VERSIONS = {"2"}
+
+
 @dataclass(frozen=True)
 class FragmentLibrary:
     records: tuple[ParameterRecord, ...]
     atom_metadata: dict[str, dict[int, AtomMetadata]] = field(default_factory=dict)
+    schema_version: str = field(default=_SCHEMA_VERSION)
 
     def query(
         self,
@@ -104,8 +114,8 @@ class FragmentLibrary:
         pattern: str,
         member_local_indices: tuple[int, ...],
         parameter: ForceFieldParameter,
-    ) -> list[float]:
-        values = []
+    ) -> list[float | tuple[DihedralTerm, ...]]:
+        values: list[float | tuple[DihedralTerm, ...]] = []
         for record in self.records:
             if record.parameter != parameter:
                 continue
@@ -126,8 +136,31 @@ class FragmentLibrary:
                     targets.add((pattern, local_idx))
         return targets
 
+    @classmethod
+    def merge(cls, first: FragmentLibrary, second: FragmentLibrary) -> FragmentLibrary:
+        if first.schema_version != second.schema_version:
+            raise ValueError(
+                f"Cannot merge libraries with different schema versions: "
+                f"{first.schema_version!r} vs {second.schema_version!r}"
+            )
+        return cls(
+            records=cls._merged_records(first.records, second.records),
+            atom_metadata={**first.atom_metadata, **second.atom_metadata},
+            schema_version=first.schema_version,
+        )
+
+    @staticmethod
+    def _merged_records(
+        first: tuple[ParameterRecord, ...],
+        second: tuple[ParameterRecord, ...],
+    ) -> tuple[ParameterRecord, ...]:
+        seen = {(r.global_indices, r.parameter) for r in first}
+        additional = [r for r in second if (r.global_indices, r.parameter) not in seen]
+        return first + tuple(additional)
+
     def save(self, path: Path) -> None:
         data = {
+            "schema_version": self.schema_version,
             "records": [self._record_to_dict(record) for record in self.records],
             "atom_metadata": self._metadata_to_dict(),
         }
@@ -136,9 +169,16 @@ class FragmentLibrary:
     @classmethod
     def load(cls, path: Path) -> FragmentLibrary:
         data = json.loads(path.read_text())
+        version = data.get("schema_version", "1")
+        if version not in _SUPPORTED_VERSIONS:
+            raise ValueError(
+                f"Unsupported FragmentLibrary schema version {version!r}. "
+                f"Supported: {sorted(_SUPPORTED_VERSIONS)}. "
+                f"Run migrate_v1_to_v2() to upgrade."
+            )
         records = tuple(cls._record_from_dict(entry) for entry in data["records"])
         atom_metadata = cls._metadata_from_dict(data.get("atom_metadata", {}))
-        return cls(records=records, atom_metadata=atom_metadata)
+        return cls(records=records, atom_metadata=atom_metadata, schema_version=version)
 
     def _metadata_to_dict(self) -> dict:
         result: dict = {}
@@ -176,8 +216,12 @@ class FragmentLibrary:
 
     @staticmethod
     def _hit_to_dict(hit: ParameterHit) -> dict:
+        if isinstance(hit.value, tuple):
+            serialised_value = {"terms": [[t.force_constant, t.phase, t.periodicity] for t in hit.value]}
+        else:
+            serialised_value = hit.value
         return {
-            _HitField.VALUE: hit.value,
+            _HitField.VALUE: serialised_value,
             _HitField.FRAGMENT_PATTERN: hit.fragment.pattern,
             _HitField.MATCH_INSTANCE: hit.match_instance,
             _HitField.MEMBER_LOCAL_INDICES: list(hit.member_local_indices),
@@ -197,8 +241,16 @@ class FragmentLibrary:
 
     @staticmethod
     def _hit_from_dict(data: dict) -> ParameterHit:
+        raw = data[_HitField.VALUE]
+        if isinstance(raw, dict) and "terms" in raw:
+            value: float | tuple[DihedralTerm, ...] = tuple(
+                DihedralTerm(force_constant=t[0], phase=t[1], periodicity=t[2])
+                for t in raw["terms"]
+            )
+        else:
+            value = raw
         return ParameterHit(
-            value=data[_HitField.VALUE],
+            value=value,
             fragment=Fragment(pattern=data[_HitField.FRAGMENT_PATTERN]),
             match_instance=data[_HitField.MATCH_INSTANCE],
             member_local_indices=tuple(data[_HitField.MEMBER_LOCAL_INDICES]),
@@ -237,6 +289,7 @@ class FragmentLibrary:
             annotated_bonds=tuple(m for m in members if isinstance(m, AnnotatedBond)),
             annotated_angles=tuple(m for m in members if isinstance(m, AnnotatedAngle)),
             annotated_dihedrals=tuple(m for m in members if isinstance(m, AnnotatedDihedral)),
+            annotated_impropers=tuple(m for m in members if isinstance(m, AnnotatedImproper)),
             annotated_atoms=tuple(m for m in members if isinstance(m, AnnotatedAtom)),
         )
 
@@ -266,6 +319,8 @@ class FragmentLibrary:
             return AnnotatedAngle(local_indices=local_indices, parameter=parameter)
         if isinstance(parameter, DihedralParameter):
             return AnnotatedDihedral(local_indices=local_indices, parameter=parameter)
+        if isinstance(parameter, ImproperParameter):
+            return AnnotatedImproper(local_indices=local_indices, parameter=parameter)
         return AnnotatedAtom(local_index=local_indices[0], parameter=parameter)
 
     @staticmethod

@@ -88,7 +88,7 @@ class NeighbourhoodSMARTSStrategy:
         )
         if not heavy_ball:
             return None
-        smarts, centre_to_local = SmartsBuilder.subgraph(mol, heavy_ball)
+        smarts, centre_to_local = SmartsBuilder.subgraph(mol, heavy_ball, include_h_count=False)
         query = Chem.MolFromSmarts(smarts)
         if query is None:
             return None

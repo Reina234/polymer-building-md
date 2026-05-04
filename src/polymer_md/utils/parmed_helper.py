@@ -1,26 +1,38 @@
 from __future__ import annotations
 
-import tempfile
-
 import numpy as np
 import parmed as pmd
 from parmed.topologyobjects import DihedralTypeList
 from rdkit import Chem
-from rdkit.Chem import rdDetermineBonds
+
+
+def mol_from_structure(structure: pmd.Structure) -> Chem.Mol:
+    """Build a bare RDKit mol from parmed atom/bond topology (no 3D coords needed)."""
+    edit = Chem.RWMol()
+    for atom in structure.atoms:
+        edit.AddAtom(Chem.Atom(atom.atomic_number))
+    for bond in structure.bonds:
+        edit.AddBond(bond.atom1.idx, bond.atom2.idx, Chem.BondType.SINGLE)
+    try:
+        Chem.SanitizeMol(edit)
+    except Chem.rdchem.MolSanitizeException:
+        pass
+    return edit.GetMol()
 
 
 class StructureMolDeriver:
     @staticmethod
-    def derive(structure: pmd.Structure) -> Chem.Mol:
-        with tempfile.NamedTemporaryFile(suffix=".pdb", delete=False) as temporary_file:
-            pdb_path = temporary_file.name
-        structure.save(pdb_path, overwrite=True)
-        raw = Chem.MolFromPDBFile(pdb_path, removeHs=False, sanitize=False)
-        if raw is None:
-            raise ValueError(f"RDKit could not parse parmed-written PDB: {pdb_path}")
-        rdDetermineBonds.DetermineBonds(raw, charge=0)
-        Chem.SanitizeMol(raw)
-        return raw
+    def derive(structure: pmd.Structure, mol_3d: Chem.Mol) -> Chem.Mol:
+        mol3d_to_parmed = CoordinateCrosswalk.map_mol3d_to_parmed(mol_3d, structure)
+        edit = Chem.RWMol()
+        for atom in structure.atoms:
+            edit.AddAtom(Chem.Atom(atom.atomic_number))
+        for bond in mol_3d.GetBonds():
+            i_pmd = mol3d_to_parmed[bond.GetBeginAtomIdx()]
+            j_pmd = mol3d_to_parmed[bond.GetEndAtomIdx()]
+            edit.AddBond(i_pmd, j_pmd, bond.GetBondType())
+        Chem.SanitizeMol(edit)
+        return edit.GetMol()
 
 
 class CoordinateCrosswalk:
@@ -72,13 +84,17 @@ class ParmedTypeResolver:
         return angle.type
 
     @staticmethod
-    def dihedral_type(dihedral: pmd.Dihedral) -> pmd.DihedralType:
+    def dihedral_types(dihedral: pmd.Dihedral) -> list[pmd.DihedralType]:
         dtype = dihedral.type
-        if isinstance(dtype, DihedralTypeList):
-            return dtype[0]
         if dtype is None:
             raise ValueError(
                 f"Dihedral among atoms {dihedral.atom1.idx}, {dihedral.atom2.idx}, "
                 f"{dihedral.atom3.idx}, {dihedral.atom4.idx} has no type assigned"
             )
-        return dtype
+        if isinstance(dtype, DihedralTypeList):
+            return list(dtype)
+        return [dtype]
+
+    @staticmethod
+    def dihedral_type(dihedral: pmd.Dihedral) -> pmd.DihedralType:
+        return ParmedTypeResolver.dihedral_types(dihedral)[0]

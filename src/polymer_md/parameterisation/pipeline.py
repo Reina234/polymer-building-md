@@ -79,9 +79,20 @@ class TrimerParameterisationPipeline:
         )
 
         results = []
+        smiles_cache: dict[str, ParameterisedTrimer] = {}
         for trimer in tqdm(selected, desc="Parameterizing trimers", unit="trimer"):
+            smiles = RDKitHelper.canonical_smiles_stripped(trimer.mol)
+            if smiles in smiles_cache:
+                logger.info(
+                    "Skipping %s (duplicate of cached trimer by canonical SMILES).",
+                    trimer.label,
+                )
+                results.append(smiles_cache[smiles])
+                continue
             logger.info("Parameterizing %s  p=%.4f", trimer.label, trimer.probability)
-            results.append(self._parameterise_trimer(trimer, output_dir))
+            parameterised = self._parameterise_trimer(trimer, output_dir)
+            smiles_cache[smiles] = parameterised
+            results.append(parameterised)
 
         logger.info("Pipeline complete: %d trimers parameterised.", len(results))
         return results
@@ -97,6 +108,26 @@ class TrimerParameterisationPipeline:
         logger.info("Transition matrix solved: %d sites.", matrix.n_sites)
         return matrix
 
+    def run_selected(
+        self, selected: list[TrimerResult], output_dir: Path
+    ) -> list[ParameterisedTrimer]:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        results = []
+        smiles_cache: dict[str, ParameterisedTrimer] = {}
+        for trimer in tqdm(selected, desc="Parameterising trimers", unit="trimer"):
+            smiles = RDKitHelper.canonical_smiles_stripped(trimer.mol)
+            if smiles in smiles_cache:
+                logger.info(
+                    "Skipping %s (duplicate canonical SMILES).", trimer.label
+                )
+                results.append(smiles_cache[smiles])
+                continue
+            logger.info("Parameterising %s", trimer.label)
+            parameterised = self._parameterise_trimer(trimer, output_dir)
+            smiles_cache[smiles] = parameterised
+            results.append(parameterised)
+        return results
+
     def _filter_by_probability(self, trimers: list[TrimerResult]) -> list[TrimerResult]:
         return [t for t in trimers if t.probability >= self.probability_threshold]
 
@@ -106,6 +137,28 @@ class TrimerParameterisationPipeline:
         name = self._trimer_name(trimer)
         trimer_dir = output_dir / name
         trimer_dir.mkdir(parents=True, exist_ok=True)
+
+        acpype_dir = trimer_dir / f"{name}.acpype"
+        itp = acpype_dir / f"{name}_GMX.itp"
+        gro = acpype_dir / f"{name}_GMX.gro"
+        top = acpype_dir / f"{name}_GMX.top"
+
+        if itp.exists() and gro.exists() and top.exists():
+            gromacs_files = GromacsFiles(itp=itp, gro=gro, top=top)
+            logger.info("  [%s] Reusing cached GROMACS files.", name)
+            mol_3d = self.conformer_generator.embed(trimer.mol)
+            structure = pmd.load_file(
+                str(gromacs_files.top), xyz=str(gromacs_files.gro)
+            )
+            logger.info(
+                "  [%s] Done. Atoms in structure: %d", name, len(structure.atoms)
+            )
+            return ParameterisedTrimer(
+                trimer_result=trimer,
+                gromacs_files=gromacs_files,
+                structure=structure,
+                mol_3d=mol_3d,
+            )
 
         logger.info("  [%s] Embedding 3D conformer...", name)
         mol_3d = self.conformer_generator.embed(trimer.mol)

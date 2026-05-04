@@ -3,6 +3,7 @@ from __future__ import annotations
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
+from rdkit import Chem
 
 from polymer_md.parameterisation.data_models.parameterised_trimer import ParameterisedTrimer
 from polymer_md.utils.parmed_helper import CoordinateCrosswalk
@@ -11,6 +12,15 @@ from polymer_md.visualisation._palette import REGION_FACE, REGION_HEX, REGION_RG
 
 _REGION_ORDER = ["left", "central", "right", "cap"]
 _REGION_LABELS = {"left": "Left", "central": "Central", "right": "Right", "cap": "Cap"}
+
+_FIGURE_SIZE = (17, 7)
+_WIDTH_RATIOS = [1.1, 1]
+_GRID_WSPACE = 0.06
+_TITLE_FONT_SIZE = 13
+_LEGEND_FONT_SIZE = 9
+_ANNOTATION_FONT_SIZE = 9.5
+_AXIS_LABEL_FONT_SIZE = 10
+_REGION_LABEL_FONT_SIZE = 7.5
 
 
 def plot_parameterised_trimer(pt: ParameterisedTrimer) -> plt.Figure:
@@ -23,8 +33,8 @@ def plot_parameterised_trimer(pt: ParameterisedTrimer) -> plt.Figure:
 
     heavy_atoms = _collect_heavy_atom_data(pt, crosswalk, region_membership)
 
-    fig = plt.figure(figsize=(17, 7), facecolor="white")
-    gs = fig.add_gridspec(1, 2, width_ratios=[1.1, 1], wspace=0.06)
+    fig = plt.figure(figsize=_FIGURE_SIZE, facecolor="white")
+    gs = fig.add_gridspec(1, 2, width_ratios=_WIDTH_RATIOS, wspace=_GRID_WSPACE)
 
     ax_mol = fig.add_subplot(gs[0])
     img = render_mol_2d(mol_2d, atom_rgb_map, atom_notes)
@@ -34,14 +44,14 @@ def plot_parameterised_trimer(pt: ParameterisedTrimer) -> plt.Figure:
         for r in _REGION_ORDER
         if any(d["region"] == r for d in heavy_atoms)
     ]
-    ax_mol.legend(handles=legend_handles, loc="lower right", fontsize=9, framealpha=0.9)
+    ax_mol.legend(handles=legend_handles, loc="lower right", fontsize=_LEGEND_FONT_SIZE, framealpha=0.9)
 
     ax_charge = fig.add_subplot(gs[1])
     _draw_charge_panel(ax_charge, heavy_atoms)
 
     fig.suptitle(
         f"Parameterised Trimer — {pt.trimer_result.label}  (p = {pt.trimer_result.probability:.3f})",
-        fontsize=13,
+        fontsize=_TITLE_FONT_SIZE,
         fontweight="bold",
         y=1.01,
     )
@@ -96,7 +106,6 @@ def _collect_heavy_atom_data(
     region_order = {r: i for i, r in enumerate(_REGION_ORDER)}
     atoms = []
     for mol3d_idx, parmed_idx in crosswalk.items():
-        from rdkit import Chem
         atom = pt.mol_3d.GetAtomWithIdx(mol3d_idx)
         if atom.GetAtomicNum() == 1:
             continue
@@ -132,13 +141,13 @@ def _draw_charge_panel(ax: plt.Axes, heavy_atoms: list[dict]) -> None:
         f"Q$_{{total}}$ = {total:+.4f} e",
         transform=ax.transAxes,
         ha="right", va="top",
-        fontsize=9.5,
+        fontsize=_ANNOTATION_FONT_SIZE,
         bbox=dict(facecolor="white", edgecolor="#CCCCCC", boxstyle="round,pad=0.3", alpha=0.85),
     )
 
     ax.set_xticks([])
-    ax.set_ylabel("Partial charge (e)", fontsize=10)
-    ax.set_title("Per-atom partial charges", fontsize=10, pad=6)
+    ax.set_ylabel("Partial charge (e)", fontsize=_AXIS_LABEL_FONT_SIZE)
+    ax.set_title("Per-atom partial charges", fontsize=_AXIS_LABEL_FONT_SIZE, pad=6)
     ax.grid(axis="y", color="#EBEBEB", linewidth=0.8, zorder=0)
     ax.set_xlim(-0.7, len(heavy_atoms) - 0.3)
 
@@ -148,7 +157,6 @@ def _add_region_shading(ax: plt.Axes, heavy_atoms: list[dict], x: np.ndarray) ->
         return
     current_region = heavy_atoms[0]["region"]
     start = 0
-    ymin, ymax = ax.get_ylim()
 
     def _shade(start_x: int, end_x: int, region: str) -> None:
         ax.axvspan(
@@ -163,7 +171,7 @@ def _add_region_shading(ax: plt.Axes, heavy_atoms: list[dict], x: np.ndarray) ->
             _REGION_LABELS[region],
             transform=ax.get_xaxis_transform(),
             ha="center", va="bottom",
-            fontsize=7.5,
+            fontsize=_REGION_LABEL_FONT_SIZE,
             color=REGION_HEX[region],
             fontweight="bold",
         )

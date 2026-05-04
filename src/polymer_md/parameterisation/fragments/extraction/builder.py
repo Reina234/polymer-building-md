@@ -50,7 +50,7 @@ class FragmentLibraryBuilder:
     ) -> tuple[list[ParameterRecord], dict[str, dict[int, AtomMetadata]]]:
         fragment_pairs = self._extract_all_fragment_pairs(parameterised_trimer)
         fragments = [fragment for fragment, _ in fragment_pairs]
-        derived_mol = StructureMolDeriver.derive(parameterised_trimer.structure)
+        derived_mol = StructureMolDeriver.derive(parameterised_trimer.structure, parameterised_trimer.mol_3d)
         matcher = FragmentMatcher(fragments)
         matches = matcher.match_all(derived_mol)
         records = matcher.build_records(matches, parameterised_trimer.structure)
@@ -133,7 +133,7 @@ class FragmentLibraryBuilder:
             if residue_position is None:
                 continue
             residue_id, within_residue_position = residue_position
-            gaff2_type = atom.atom_type.name if atom.atom_type is not None else ""
+            gaff2_type = getattr(atom.atom_type, "name", "") if atom.atom_type is not None else ""
             local_metadata[local_idx] = AtomMetadata(
                 gaff2_type=gaff2_type,
                 residue_id=residue_id,
