@@ -28,7 +28,6 @@ from polymer_md.parameterisation.fragments.data_models.match import ResolutionSt
 from polymer_md.parameterisation.pipeline import TrimerParameterisationPipeline
 from polymer_md.parameterisation.strategies.base import MissingParameterStrategy
 from polymer_md.parameterisation.tiler import PolymerParameterisationTiler, adjust_charge_neutrality
-from polymer_md.utils.parmed_helper import StructureMolDeriver
 from polymer_md.utils.topology_builder import TopologyBuilder
 
 logger = logging.getLogger(__name__)
@@ -102,9 +101,6 @@ class PolymerFirstParameterisationPipeline:
         logger.info("Building topology...")
         structure = TopologyBuilder.build(mol_3d)
 
-        logger.info("Deriving RDKit mol from parmed structure...")
-        derived_mol = StructureMolDeriver.derive(structure, mol_3d)
-
         logger.info("Building polymer atom metadata...")
         polymer_atom_metadata = self._build_polymer_atom_metadata(polymer)
 
@@ -114,7 +110,7 @@ class PolymerFirstParameterisationPipeline:
             resolution_strategy=self.resolution_strategy,
             missing_strategies=self.missing_strategies,
         )
-        tiler.tile(structure, derived_mol, polymer_atom_metadata)
+        tiler.tile(structure, mol_3d, polymer_atom_metadata)
 
         if self.adjust_charge:
             logger.info("Adjusting charge neutrality...")

@@ -6,6 +6,7 @@ from polymer_md.visualisation.color_scheme import (
     ResidueColorScheme,
 )
 from polymer_md.visualisation.comparison import plot_comparison
+from polymer_md.visualisation.difference_3d import DifferenceViewer
 from polymer_md.visualisation.polymer import plot_parameterised_polymer
 from polymer_md.visualisation.polymer_3d import PolymerViewer
 from polymer_md.visualisation.trimer import plot_parameterised_trimer
@@ -17,6 +18,7 @@ __all__ = [
     "plot_comparison",
     "view_trimer_3d",
     "PolymerViewer",
+    "DifferenceViewer",
     "ColorScheme",
     "ChargeColorScheme",
     "ResidueColorScheme",

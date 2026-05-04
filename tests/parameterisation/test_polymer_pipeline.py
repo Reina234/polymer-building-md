@@ -129,7 +129,6 @@ class TestPolymerPipelineRun:
                 patch.object(PolymerParameterisationPipeline, "_build_polymer", return_value=(mock_polymer, [])),
                 patch("polymer_md.parameterisation.polymer_pipeline.ETKDGConformerGenerator") as MockConformer,
                 patch("polymer_md.parameterisation.polymer_pipeline.TopologyBuilder") as MockTB,
-                patch("polymer_md.parameterisation.polymer_pipeline.StructureMolDeriver") as MockDeriv,
                 patch("polymer_md.parameterisation.polymer_pipeline.PolymerParameterisationTiler") as MockTiler,
                 patch("polymer_md.parameterisation.polymer_pipeline.adjust_charge_neutrality"),
             ):
@@ -137,7 +136,6 @@ class TestPolymerPipelineRun:
                 mock_atoms = [MagicMock() for _ in range(3)]
                 mock_structure.atoms = mock_atoms
                 MockTB.build.return_value = mock_structure
-                MockDeriv.derive.return_value = mol
                 MockConformer.return_value.embed.return_value = mol
                 mock_tiler_instance = MagicMock()
                 MockTiler.return_value = mock_tiler_instance
@@ -233,7 +231,6 @@ class TestPolymerPipelineRun:
                 patch.object(PolymerParameterisationPipeline, "_build_polymer", return_value=(mock_polymer, [])),
                 patch("polymer_md.parameterisation.polymer_pipeline.ETKDGConformerGenerator"),
                 patch("polymer_md.parameterisation.polymer_pipeline.TopologyBuilder") as MockTB,
-                patch("polymer_md.parameterisation.polymer_pipeline.StructureMolDeriver") as MockDeriv,
                 patch("polymer_md.parameterisation.polymer_pipeline.PolymerParameterisationTiler"),
                 patch("polymer_md.parameterisation.polymer_pipeline.adjust_charge_neutrality") as mock_adj,
                 patch.object(PolymerParameterisationPipeline, "_save_gromacs") as mock_save,
@@ -241,7 +238,6 @@ class TestPolymerPipelineRun:
                 mock_structure = MagicMock(spec=pmd.Structure)
                 mock_structure.atoms = []
                 MockTB.build.return_value = mock_structure
-                MockDeriv.derive.return_value = mol
 
                 from polymer_md.conversion.gromacs_files import GromacsFiles
                 gro = tmp / "p.gro"; top = tmp / "p.top"; itp = tmp / "p.itp"
