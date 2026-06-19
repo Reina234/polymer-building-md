@@ -334,7 +334,7 @@ core ← geometry ← building ← conversion ← parameterisation ← analysis 
 
 ## Key design decisions
 
-**SMARTS as the parameter index.** Parameters are stored under the chemical pattern that produced them, not under an atom position or residue name. This makes the library transferable: a pattern that matched a C–C bond in an MMA–BA–MMA trimer will match the same environment anywhere in any polymer built from those monomers.
+**SMARTS as the parameter index.** Parameters are stored under the chemical pattern that produced them, not under an atom position or residue name. This makes the library transferable: a pattern that matched a C–C bond in an MMA–BA–MMA trimer will match the maisame environment anywhere in any polymer built from those monomers.
 
 **Index identity between RDKit and parmed.** `TopologyBuilder.build(mol_3d)` adds parmed atoms in the same order as RDKit iterates them, so `structure.atoms[i].idx == i` and the polymer mol maps directly to the parmed structure without coordinate cross-walking.
 
