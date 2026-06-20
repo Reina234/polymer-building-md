@@ -1,5 +1,5 @@
 
-`polymer-md` builds a reusable **fragment library** from short trimers, then *tiles* those parameters onto any polymer assembled from the same monomers.
+This repo builds a reusable fragment library from short trimers, then tiles those parameters onto any polymer assembled from the same monomers.
 
 
 ---
