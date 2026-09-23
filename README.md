@@ -1,6 +1,13 @@
 
 This repo builds a reusable fragment library from short trimers, then tiles those parameters onto any polymer assembled from the same monomers.
 
+## Why?
+
+Parameterising a whole polymer chain with antechamber is slow, and you have to redo it every time the length or composition changes. So this doesn't bother with the whole chain. It parameterises a few short trimers, saves their parameters as a reusable fragment library, and then tiles them onto a polymer of any length built from the same monomers. You get GROMACS-ready `.itp` / `.gro` / `.top` files at the end. This is a small refactored module pulled out of my IIB project, which chains this with reusing explicit solvent environments, and course graining modules.
+
+This currently works for homopolymers and random copolymers, with more to come. There are also tools for checking the result against a reference topology, including a 3D viewer that shows where the
+parameters differ.
+
 
 ---
 
